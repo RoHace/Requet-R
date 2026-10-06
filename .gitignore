@@ -1,0 +1,4 @@
+# Artefact reconstructible depuis n'importe quel commit : node build.mjs
+requeter.html
+requeter.html.tmp
+node_modules/

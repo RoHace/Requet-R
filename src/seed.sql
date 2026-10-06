@@ -1,0 +1,2 @@
+-- Requêt'R — base de démo. VIDE au lot 1 : le schéma et le jeu de données naissent au lot 2.
+-- Règle D001 : constantes littérales uniquement (pas de date('now'), random(), CURRENT_TIMESTAMP).
