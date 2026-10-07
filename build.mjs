@@ -12,10 +12,13 @@ const RACINE = dirname(fileURLToPath(import.meta.url));
 const chemin = (...p) => join(RACINE, ...p);
 
 const SOURCES = {
-  gabarit: "src/template.html",
-  app:     "src/app.js",
-  contenu: "src/contenu.js",
-  seed:    "src/seed.sql",
+  gabarit:     "src/template.html",
+  app:         "src/app.js",
+  contenu:     "src/contenu.js",
+  moteur:      "src/moteur.js",
+  comparateur: "src/comparateur.js",
+  exercices:   "src/exercices.js",
+  seed:        "src/seed.sql",
   sqljs:   "vendor/sql-wasm.js",
   wasm:    "vendor/sql-wasm.wasm"
 };
@@ -56,10 +59,16 @@ const valeurs = {
   WASM_B64:     wasmB64,
   SEED_SQL:     seedLitteral,
   CONTENU:      texte(SOURCES.contenu),
+  MOTEUR:       texte(SOURCES.moteur),
+  COMPARATEUR:  texte(SOURCES.comparateur),
+  EXERCICES:    texte(SOURCES.exercices),
   APP:          texte(SOURCES.app)
 };
 verifierInlinable(SOURCES.sqljs, valeurs.VENDOR_SQLJS);
 verifierInlinable(SOURCES.contenu, valeurs.CONTENU);
+verifierInlinable(SOURCES.moteur, valeurs.MOTEUR);
+verifierInlinable(SOURCES.comparateur, valeurs.COMPARATEUR);
+verifierInlinable(SOURCES.exercices, valeurs.EXERCICES);
 verifierInlinable(SOURCES.app, valeurs.APP);
 
 /* 3. Chaque marqueur du gabarit doit être connu et présent exactement une fois. */

@@ -1,14 +1,15 @@
 "use strict";
 /* ═══════════════════════════════════════════════════════════
-   REQUÊT'R — lot 2 : base de démonstration + explorateur de schéma
-   1. CONFIG     2. UI (el, icônes, toasts, tableau, piège de focus)     3. MOTEUR SQL
-   4. EXPLORATEUR DE SCHÉMA     5. DÉMO (page jetable, remplacée au lot 3)     6. APP
-   Globaux fournis par le build : initSqlJs (vendor), WASM_B64, SEED_SQL, CONTENU.
+   REQUÊT'R — lot 3 : éditeur SQL, comparateur de résultats, types d'exercices
+   1. CONFIG     2. UI (el, icônes, toasts, tableau, éditeur, piège de focus)     3. (moteur : voir src/moteur.js)
+   4. EXPLORATEUR DE SCHÉMA     5. EXERCICES ET BAC À SABLE     6. APP
+   Globaux fournis par le build, avant ce fichier : initSqlJs (vendor), WASM_B64, SEED_SQL, CONTENU, CLAUSES, PALIERS (contenu.js),
+   Moteur et nouvelleBase (moteur.js), Comparateur (comparateur.js), TYPES_EXERCICE, Indices, Attendus (exercices.js).
    ═══════════════════════════════════════════════════════════ */
 
 /* ══ 1. CONFIG ══════════════════════════════════════════════ */
 const CONFIG = {
-  version: "0.2.0-lot2",
+  version: "0.3.0-lot3",
   schema: 1,
   cle: "requeter.etat"          // clé de stockage, utilisée à partir du lot 4 (Store)
 };
@@ -34,6 +35,7 @@ function el(selecteur, attrs = {}, ...enfants) {
 }
 
 const ICONES = {
+  exercices: '<rect x="3.5" y="3" width="13" height="14" rx="1.5"/><path d="M7 7.5h6M7 10.5h6M7 13.5h3.5"/>',
   bacasable: '<rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M6.5 8.5 9 10.5l-2.5 2M11 13h3"/>',
   schema: '<rect x="2.5" y="3" width="6" height="5" rx="1"/><rect x="11.5" y="3" width="6" height="5" rx="1"/><rect x="7" y="12.5" width="6" height="5" rx="1"/><path d="M5.5 8v2.5h4.5v2M14.5 8v2.5H10"/>'
 };
@@ -83,11 +85,13 @@ function formaterCellule(v) {
   return { texte: String(v), classe: "" };
 }
 
-/** Table de résultats en lecture seule (à placer dans un conteneur .resultat). */
-function tableResultat(jeu, limite) {
+/** Table de résultats en lecture seule (à placer dans un conteneur .resultat).
+ *  `absents` : indices des lignes à surligner (celles qui n'existent pas dans l'autre résultat, pour la comparaison). */
+function tableResultat(jeu, limite, { absents = [] } = {}) {
+  const marques = new Set(absents);
   const affichees = jeu.lignes.slice(0, limite);
   const corps = affichees.length
-    ? affichees.map(l => el("tr", {}, l.map(v => { const f = formaterCellule(v); return el("td" + (f.classe ? "." + f.classe : ""), {}, f.texte); })))
+    ? affichees.map((l, i) => el("tr" + (marques.has(i) ? ".ecart" : ""), {}, l.map(v => { const f = formaterCellule(v); return el("td" + (f.classe ? "." + f.classe : ""), {}, f.texte); })))
     : [el("tr", {}, el("td.aucune", { colspan: jeu.colonnes.length }, "Aucune ligne."))];
   return el("div.resultat__zone", {},
     el("table", {},
@@ -95,101 +99,54 @@ function tableResultat(jeu, limite) {
       el("tbody", {}, corps)));
 }
 
-/* ══ 3. MOTEUR SQL ══════════════════════════════════════════ */
-/** SQLite (sql.js) tournant en mémoire. Le binaire WASM est décodé depuis WASM_B64 :
- *  on passe wasmBinary et JAMAIS l'option de localisation du fichier, qui déclencherait une requête réseau. */
-const Moteur = (() => {
-  let SQL = null, db = null;
-  const etat = { version: null, msInit: null, msBase: null };
-  const LIMITE_LIGNES = 500;     // au-delà, l'affichage est tronqué (le moteur, lui, a tout lu)
+const milliers = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+const nbLignes = n => `${n} ligne${n > 1 ? "s" : ""}`;
 
-  function decoderBase64(b64) {
-    const binaire = atob(b64);
-    const octets = new Uint8Array(binaire.length);
-    for (let i = 0; i < binaire.length; i++) octets[i] = binaire.charCodeAt(i);
-    return octets;
-  }
-
-  /** Repart d'une base propre : seed rejoué, rien d'autre. Les clés étrangères sont activées par le seed lui-même
-   *  (PRAGMA foreign_keys = ON, désactivées par défaut dans sql.js). Le seed est un paramètre (D027) : par défaut le
-   *  seed principal, mais un autre jeu pourra être chargé à sa place. Préférer nouvelleBase(), qui mesure. */
-  function reinitialiser(seed = SEED_SQL) {
-    if (db) db.close();
-    db = new SQL.Database();
-    if (seed.trim()) db.exec(seed);
-  }
-
-  async function initialiser() {
-    const debut = performance.now();
-    SQL = await initSqlJs({ wasmBinary: decoderBase64(WASM_B64).buffer });
-    nouvelleBase();
-    etat.version = db.exec("SELECT sqlite_version()")[0].values[0][0];
-    etat.msInit = Math.round(performance.now() - debut);
-    return etat;
-  }
-
-  /** Exécute un script (une ou plusieurs instructions) sur la base courante.
-   *  Renvoie les jeux de résultats produits avant une éventuelle erreur ; l'erreur est le message SQLite brut.
-   *  Un SELECT sans ligne donne quand même ses colonnes (db.exec, lui, l'omettrait). */
-  function executer(sql) {
-    const debut = performance.now();
-    const jeux = [];
-    let erreur = null;
-    try {
-      for (const st of db.iterateStatements(sql)) {
-        const colonnes = st.getColumnNames();
-        if (colonnes.length) {
-          const lignes = [];
-          while (st.step()) lignes.push(st.get());
-          jeux.push({ colonnes, lignes });
-        } else {
-          st.step();               // CREATE, INSERT… : il faut l'exécuter, pas seulement le préparer
-        }
-        st.free();
-      }
-    } catch (err) {
-      erreur = err.message;
-    }
-    return { jeux, erreur, ms: Math.round((performance.now() - debut) * 10) / 10, limite: LIMITE_LIGNES };
-  }
-
-  function nbTables() {
-    return db.exec("SELECT count(*) FROM sqlite_master WHERE type = 'table'")[0].values[0][0];
-  }
-
-  /** Description de la base courante, en LECTURE SEULE (sert l'explorateur) : tables, colonnes, clés primaires et
-   *  étrangères, nombre de lignes, aperçu des 5 premières lignes (par rowid : ordre stable). */
-  function schema() {
-    const cite = n => `"${String(n).replace(/"/g, '""')}"`;
-    const lire = sql => { const r = db.exec(sql); return r.length ? r[0].values : []; };
-    return lire("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid").map(([nom, sql]) => {
-      let apercu;
-      try { apercu = lire(`SELECT * FROM ${cite(nom)} ORDER BY rowid LIMIT 5`); }
-      catch (e) { apercu = lire(`SELECT * FROM ${cite(nom)} LIMIT 5`); }      // table WITHOUT ROWID
-      return {
-        nom, sql,
-        colonnes: lire(`PRAGMA table_info(${cite(nom)})`).map(([, n, type, obligatoire, , pk]) => ({ nom: n, type, obligatoire: !!obligatoire, pk })),
-        cles: lire(`PRAGMA foreign_key_list(${cite(nom)})`).map(([, , table, de, vers]) => ({ de, table, vers })),
-        lignes: lire(`SELECT count(*) FROM ${cite(nom)}`)[0][0],
-        apercu
-      };
-    });
-  }
-
-  return { initialiser, reinitialiser, executer, nbTables, schema, etat };
-})();
-
-/** Base neuve depuis un seed : appelée à l'entrée de chaque exercice (D008, chaque exercice repart d'une base propre).
- *  Sans argument, c'est le seed principal (gelé, D025). Un autre jeu de données — typiquement le jeu « sale » du
- *  palier 5 (D027) — se charge à sa place en le passant en paramètre : nouvelleBase(autreSeed). Rien n'est mémorisé :
- *  l'appel suivant sans argument revient au seed principal.
- *  Mesure le temps de reconstruction et le consigne dans Moteur.etat.msBase (en ms, au dixième) ; le renvoie aussi. */
-function nouvelleBase(seed = SEED_SQL) {
-  const debut = performance.now();
-  Moteur.reinitialiser(seed);
-  Moteur.etat.msBase = Math.round((performance.now() - debut) * 10) / 10;
-  return Moteur.etat.msBase;
+/** Éditeur SQL : un <textarea> à chasse fixe, sans coloration ni autocomplétion (lot 3, volontairement sobre).
+ *  Ctrl/Cmd + Entrée exécute ; avec Maj, vérifie (si `surVerifier` est fourni). Tab reste le changement de focus (accessibilité).
+ *  Le composant ne se reconstruit jamais : le verdict met à jour d'autres zones, jamais ce <textarea>. */
+function editeurSQL({ valeur = "", etiquette = "Requête SQL", surExecuter, surVerifier = null, surChange = null }) {
+  const zone = el("textarea.editeur-sql", { spellcheck: "false", autocomplete: "off", autocapitalize: "off", "aria-label": etiquette }, valeur);
+  zone.addEventListener("keydown", ev => {
+    if (ev.key !== "Enter" || !(ev.ctrlKey || ev.metaKey)) return;
+    ev.preventDefault();
+    if (ev.shiftKey && surVerifier) surVerifier(); else surExecuter();
+  });
+  zone.addEventListener("input", () => { if (surChange) surChange(zone.value); });
+  return {
+    element: zone,
+    valeur: () => zone.value,
+    definir(v) { zone.value = v; if (surChange) surChange(v); },
+    focus: () => zone.focus()
+  };
 }
+
+/** Ce que « Exécuter » affiche : un tableau par jeu de résultats, l'erreur SQLite BRUTE telle quelle (lire
+ *  « near "SELEC": syntax error » fait partie du métier), et les remarques utiles (écriture, plafond, délai). */
+function blocsExecution(res) {
+  const blocs = [];
+  res.jeux.forEach((jeu, i) => {
+    const n = jeu.lignes.length;
+    const total = jeu.tronque ? `Plus de ${milliers(res.limiteLecture)} lignes` : nbLignes(n);
+    blocs.push(el("h3.resultat__titre", {}, (res.jeux.length > 1 ? `Résultat ${i + 1} — ` : "") + total));
+    blocs.push(tableResultat(jeu, res.limite));
+    if (n > res.limite) blocs.push(el("p.resultat__note", {}, `Affichage limité aux ${res.limite} premières lignes.`));
+    if (jeu.tronque) blocs.push(el("p.resultat__note", {}, `Lecture arrêtée à ${milliers(res.limiteLecture)} lignes : la requête en renvoie davantage.`));
+  });
+  if (res.interrompu) blocs.push(el("p.resultat__note", {}, `Lecture interrompue au bout de ${res.delaiMs / 1000} s : la requête est trop longue.`));
+  if (res.erreur) {
+    blocs.push(el("div.erreur-sql", { role: "alert" }, el("b", {}, "Erreur SQLite"), el("pre", {}, res.erreur)));
+  } else if (!res.instructions) {
+    blocs.push(el("p.muet", { style: "margin-top:12px" }, "Rien à exécuter."));
+  } else if (!res.jeux.length) {
+    blocs.push(el("p.muet", { style: "margin-top:12px" }, "Exécuté sans erreur. Cette requête ne renvoie aucune ligne."));
+  }
+  if (res.ecritures) blocs.push(el("p.resultat__note", {}, "La base a été modifiée : « Réinitialiser la base » la remet à neuf. Vérifier travaille toujours sur la base d'origine."));
+  return blocs;
+}
+
+/* ══ 3. MOTEUR SQL ══════════════════════════════════════════ */
+/* Sorti de ce fichier au lot 3 : voir src/moteur.js (Moteur, nouvelleBase). */
 
 /* ══ 4. EXPLORATEUR DE SCHÉMA ═══════════════════════════════ */
 /** Carte des relations : une boîte par table, un trait par clé étrangère (« 1 » côté table pointée, « N » côté table
@@ -385,7 +342,225 @@ const Explorateur = (() => {
   return API;
 })();
 
-/* ══ 5. DÉMO (jetable : remplacée au lot 3) ═════════════════ */
+/* ══ 5. EXERCICES ET BAC À SABLE ═════════════════════════════ */
+/** Mémoire d'écran : brouillons et état de chaque exercice, EN MÉMOIRE seulement (jamais persistée : c'est le Store du lot 4).
+ *  `tentatives` et `indices` sont exposés dans chaque retour ; la politique de comptage sera décidée avec Progression (lot 4). */
+const Memoire = { exercices: new Map(), bac: null };
+function etatExercice(ex) {
+  if (!Memoire.exercices.has(ex.id)) Memoire.exercices.set(ex.id, { brouillon: null, tentatives: 0, indices: 0, reussi: false, dernier: null, reponse: null });
+  return Memoire.exercices.get(ex.id);
+}
+
+const LIBELLE_TYPE = { qcm: "Question à choix", requete: "Écrire une requête", corriger: "Corriger une requête", predire: "Prédire le résultat" };
+const TITRE_NON_EVALUE = {
+  "vide": "Requête vide", "erreur-sql": "Erreur SQLite", "ecriture": "Écriture non évaluée", "aucun-jeu": "Rien à comparer",
+  "interrompu": "Requête interrompue", "saisie-invalide": "Réponse illisible", "trop-volumineux": "Résultat trop volumineux"
+};
+
+/** Deux résultats côte à côte, tronqués aux premières lignes ; les lignes sans équivalent de l'autre côté sont surlignées.
+ *  Un résultat attendu d'UNE cellule n'est jamais affiché (D034) : on ne dit que sa forme. */
+const LIGNES_COMPARAISON = 8;
+function comparaisonResultats(v, { ordreCompte = false } = {}) {
+  const e = v.ecart;
+  const titreObtenu = v.obtenu.tronque ? `plus de ${milliers(e.lignes.obtenues)} lignes` : nbLignes(e.lignes.obtenues);
+  /** Quand l'ordre des lignes ne compte pas, les lignes sans équivalent passent en premier : l'écart se voit tout de suite,
+   *  même s'il est à la 15e ligne d'un résultat tronqué à 8. Quand il compte, l'ordre d'origine est conservé. */
+  const miseEnAvant = (jeu, absents) => {
+    if (ordreCompte || !absents.length) return { jeu, absents };
+    const marque = new Set(absents), premiers = [], autres = [];
+    jeu.lignes.forEach((l, i) => (marque.has(i) ? premiers : autres).push(l));
+    return { jeu: { colonnes: jeu.colonnes, lignes: [...premiers, ...autres], tronque: jeu.tronque }, absents: premiers.map((_, i) => i) };
+  };
+  const colonne = (titre, jeu, absents) => {
+    const m = miseEnAvant(jeu, absents);
+    return el("div.comparaison__col", {},
+      el("h4", {}, titre),
+      el("div.resultat", {}, tableResultat(m.jeu, LIGNES_COMPARAISON, { absents: m.absents }),
+        jeu.lignes.length > LIGNES_COMPARAISON ? el("p.resultat__note", {}, `… ${jeu.lignes.length - LIGNES_COMPARAISON} lignes de plus.`) : null));
+  };
+  const gauche = colonne(`Votre résultat (${titreObtenu})`, v.obtenu, e.absentsObtenus || []);
+  const droite = v.masque || !v.attendu
+    ? el("div.comparaison__col", {}, el("h4", {}, `Résultat attendu (${nbLignes(e.lignes.attendues)}, ${e.colonnes.attendues} colonne${e.colonnes.attendues > 1 ? "s" : ""})`),
+        el("p.comparaison__masque", {}, "La valeur attendue n'est pas affichée : elle reviendrait à donner la réponse. Le constat ci-dessus décrit l'écart."))
+    : colonne(`Résultat attendu (${nbLignes(e.lignes.attendues)})`, v.attendu, e.absentsAttendus || []);
+  const surligne = (e.absentsObtenus && e.absentsObtenus.length) || (e.absentsAttendus && e.absentsAttendus.length);
+  return el("div", {}, el("div.comparaison", {}, gauche, droite),
+    surligne ? el("p.resultat__note", {}, "Les lignes surlignées n'ont pas d'équivalent exact dans l'autre résultat"
+      + (ordreCompte ? "." : " ; elles sont placées en premier, car l'ordre des lignes ne compte pas ici.")) : null);
+}
+
+/** La section « Écart » : jusqu'à 3 lignes attendues sans équivalent, jusqu'à 3 lignes obtenues sans équivalent. */
+function blocEcart(v) {
+  const e = v.ecart;
+  if (v.masque || !v.attendu || !(e.nbManquantes || e.nbEnTrop)) return null;
+  const partie = (titre, nb, jeu, lignes) => nb ? [
+    el("h3.resultat__titre", {}, `${titre} (${nb}${nb > 3 ? ", 3 premières" : ""})`),
+    el("div.resultat", {}, tableResultat({ colonnes: jeu.colonnes, lignes }, 3))] : null;
+  return el("div.ecart-bloc", {}, el("b", {}, "Écart"),
+    partie("Lignes attendues sans équivalent dans votre résultat", e.nbManquantes, v.attendu, e.manquantes),
+    partie("Lignes de votre résultat sans équivalent dans l'attendu", e.nbEnTrop, v.obtenu, e.enTrop));
+}
+
+/** Le retour d'une réponse : constat (toujours vrai), où regarder (faits et lieux, jamais une hypothèse), comparaison, et — à la
+ *  réussite — l'explication et « à retenir ». Le lot 4 le fondra dans le carteRetour porté de Classe'R. */
+function carteVerdict(v, ex) {
+  const juste = v.statut === "reussi", neutre = v.statut === "non-evalue";
+  const termine = juste || ex.type === "qcm" || ex.type === "predire";      // ces types n'ont qu'une réponse : l'explication suit toujours
+  const titre = juste ? ({ qcm: "Bonne réponse", predire: "Bien vu" }[ex.type] || "Résultat correct")
+    : neutre ? (TITRE_NON_EVALUE[v.code] || "Pas évalué") : "Pas tout à fait";
+  const corps = [];
+  if (v.code === "erreur-sql") corps.push(el("div.erreur-sql", { role: "alert" }, el("b", {}, "Erreur SQLite"), el("pre", {}, v.constat)));
+  else if (v.constat) corps.push(el("p.retour__constat", {}, v.constat));
+  if (v.details) corps.push(el("p.retour__note", {}, `Écart observé : ${v.details}`));
+  if (v.pistes && v.pistes.length) corps.push(el("div.retour__pistes", {}, el("b", {}, "Où regarder"), el("ul", {}, v.pistes.map(p => el("li", {}, p)))));
+  (v.notes || []).forEach(n => corps.push(el("p.retour__note", {}, n.texte)));
+  if (!juste && !neutre && v.ecart && v.obtenu && ex.type !== "qcm" && ex.type !== "predire") corps.push(comparaisonResultats(v, { ordreCompte: !!(ex.comparer && ex.comparer.ordonne) }), blocEcart(v));
+  if (termine && ex.explication) corps.push(el("p", {}, ex.explication));
+  if (termine && ex.retenir) corps.push(el("div.retour__usage", {}, el("b", {}, "À retenir"), ex.retenir));
+  if (v.compte) corps.push(el("p.retour__note", {}, `Tentative ${v.tentatives}${v.indices ? ` · ${v.indices} indice${v.indices > 1 ? "s" : ""} vu${v.indices > 1 ? "s" : ""}` : ""}.`));
+  return el("div.retour" + (juste ? ".retour--juste" : neutre ? ".retour--neutre" : ".retour--faux"), { role: "status" },
+    el("div.retour__tete", {}, el("span.retour__icone", { "aria-hidden": "true" }, juste ? "✓" : neutre ? "i" : "✕"), el("span.retour__titre", {}, titre)),
+    el("div.retour__corps", {}, corps));
+}
+
+/** Indices gradués : Piste → Clause → Exemple → Solution (verrouillée, révélée en dernier). */
+function panneauIndices(ex, e) {
+  const liste = Indices.pour(ex);
+  if (!liste.length) return null;
+  const panneau = el("div.indices");
+  const bouton = el("button.btn.btn--nu.indices__btn", { type: "button" });
+  const dessiner = () => {
+    const restants = liste.length - e.indices, suivant = liste[e.indices];
+    bouton.textContent = restants === 0 ? "Tout est affiché" : suivant.revele ? "Afficher la solution" : e.indices === 0 ? "Besoin d'un indice ?" : "Indice suivant";
+    bouton.disabled = restants === 0;
+    bouton.classList.toggle("indices__btn--solution", !!(suivant && suivant.revele));
+    panneau.replaceChildren(bouton, ...liste.slice(0, e.indices).map(i =>
+      el("div.indice" + (i.revele ? ".indice--solution" : ""), {}, el("b", {}, i.titre), i.revele && ex.type !== "qcm" ? el("pre", {}, i.texte) : el("div", {}, i.texte))));
+  };
+  bouton.addEventListener("click", () => { if (e.indices < liste.length) { e.indices++; dessiner(); } });
+  dessiner();
+  return panneau;
+}
+
+/** Puce d'action d'une carte d'exercice : le libellé dépend de ce que l'apprenant a déjà fait (Classe'R : carteAcces). */
+function puceEtatExercice(e) {
+  if (e.reussi) return el("span.puce.puce--ok", {}, "Refaire");
+  if (e.tentatives > 0) return el("span.puce.puce--accent", {}, "Reprendre");
+  return el("span.puce.puce--accent", {}, "Commencer");
+}
+
+/** Puce « difficulté » : des points pleins sur fond de points vides, 1 à 3. */
+function puceDifficulte(n) {
+  return el("span.puce", { "aria-label": `Difficulté ${n} sur 3` }, "●".repeat(n) + "○".repeat(3 - n));
+}
+
+function carteExercice(ex) {
+  const e = etatExercice(ex);
+  return el("button.carte.carte--action", { type: "button", onclick: () => { location.hash = `#/exercice/${ex.id}`; } },
+    el("div.carte__entete", {}, el("h3.liste-exos__titre", {}, ex.titre), puceEtatExercice(e)),
+    el("div.exo__meta", {},
+      el("span.puce", {}, LIBELLE_TYPE[ex.type]),
+      ex.niveau ? el("span.puce", {}, ex.niveau) : null,
+      ex.competence ? el("span.puce", {}, ex.competence) : null,
+      ex.difficulte ? puceDifficulte(ex.difficulte) : null),
+    el("p.muet", { style: "font-size:13px" }, ex.question));
+}
+
+/** Place réservée, inerte : le lot 4 (Progression) la branchera. L'ossature est là ; rien ne se passe au clic. */
+function carteRecommandeeInerte() {
+  return el("button.carte.carte--action", { type: "button", disabled: true },
+    el("div.carte__entete", {}, el("h3", {}, "Série recommandée"), el("span.puce", {}, "Bientôt")),
+    el("p.muet", { style: "font-size:13px;margin-top:6px" },
+      "Des exercices choisis selon votre progression. Arrive au lot 4, avec Progression."));
+}
+
+/** Sélecteur de palier, inerte lui aussi : la liste ci-dessous est déjà groupée par palier, mais rien ne filtre encore. */
+function selecteurPalierInerte() {
+  const segment = el("div.segment", { role: "group", "aria-label": "Filtrer par palier (bientôt disponible)" },
+    el("button", { type: "button", disabled: true, "aria-pressed": "true" }, "Tous"),
+    PALIERS.map(p => el("button", { type: "button", disabled: true, "aria-pressed": "false" }, p.titre)));
+  return el("div", { style: "margin-bottom:var(--sp-4)" }, segment,
+    el("p.tres-muet", { style: "font-size:12px;margin-top:6px" }, "Le filtre par palier arrive au lot 4, avec Progression."));
+}
+
+function pageExercices() {
+  const exos = CONTENU.exercices;
+  const parPalier = new Map();
+  exos.forEach(ex => { const cle = ex.niveau || "?"; (parPalier.get(cle) || parPalier.set(cle, []).get(cle)).push(ex); });
+  const sections = PALIERS
+    .filter(p => parPalier.has(p.id))
+    .map(p => el("div.section", {},
+      el("div.section__titre", {}, el("h2", {}, `${p.id} — ${p.titre}`)),
+      el("div.liste-exos", {}, parPalier.get(p.id).map(carteExercice))));
+  return el("div.vue", {},
+    el("header.entete", {},
+      el("div.entete__sur", {}, "Lot 3 — exercices de démonstration"),
+      el("h1", {}, "Exercices"),
+      el("p", {}, "Quatre exercices jetables, un par type, pour éprouver la mécanique : poser, résoudre, corriger automatiquement, commenter. Le contenu pédagogique arrive à partir du lot 6.")),
+    carteRecommandeeInerte(),
+    selecteurPalierInerte(),
+    sections);
+}
+
+function pageExercice(ex) {
+  nouvelleBase();                                   // D008 : chaque exercice repart d'une base propre
+  const e = etatExercice(ex);
+  const type = TYPES_EXERCICE[ex.type];
+  const rappels = [];
+  const zoneRetour = el("div", { id: "zone-retour" });
+  const pied = el("div.exo__pied");
+  const suivant = CONTENU.exercices[CONTENU.exercices.findIndex(x => x.id === ex.id) + 1] || null;
+
+  let erreurAuteur = null;                          // le résultat attendu est calculé à l'entrée et mis en cache ; une référence qui plante se voit tout de suite
+  try { if (ex.type === "predire") Attendus.predire(ex); else if (ex.solution) Attendus.de(ex); } catch (err) { erreurAuteur = err.message; }
+
+  let panneau = null;
+  const majPied = () => {
+    const boutonSuivant = e.dernier && e.dernier.statut !== "non-evalue" && (e.reussi || ex.type === "qcm" || ex.type === "predire") && suivant
+      ? el("a.btn.btn--fort", { href: `#/exercice/${suivant.id}`, id: "exo-suivant" }, "Exercice suivant →") : null;
+    pied.replaceChildren(el("a.btn", { href: "#/exercices" }, "← Tous les exercices"), ...(boutonSuivant ? [boutonSuivant] : []));
+  };
+  const afficherRetour = retour => {
+    zoneRetour.replaceChildren(carteVerdict(retour, ex));
+    if (retour.reussi && panneau) panneau.remove();
+    majPied();
+  };
+
+  const api = {
+    get brouillon() { return e.brouillon; },
+    surBrouillon: v => { e.brouillon = v; },
+    reponsePrecedente: e.reponse,
+    surRetour: fn => rappels.push(fn),
+    repondre(r) {
+      const res = type.valider(ex, r);
+      if (res.compte) { e.tentatives++; e.reponse = r; }
+      if (res.reussi) e.reussi = true;
+      const retour = { ...res, tentatives: e.tentatives, indices: e.indices };     // ce que Progression consommera au lot 4
+      e.dernier = retour;
+      rappels.forEach(fn => fn(retour));
+      afficherRetour(retour);
+      const aller = retour.reussi ? document.getElementById("exo-suivant") : null;   // à la réussite, le focus passe au bouton de suite
+      if (aller) aller.focus(); else zoneRetour.scrollIntoView({ block: "nearest" });
+      return retour;
+    }
+  };
+
+  const bloc = erreurAuteur
+    ? el("div.erreur-sql", { role: "alert" }, el("b", {}, "Exercice mal écrit"), el("pre", {}, erreurAuteur))
+    : type.rendre(ex, api);
+  if (!e.reussi) panneau = panneauIndices(ex, e);
+  if (e.dernier) { rappels.forEach(fn => fn(e.dernier)); afficherRetour(e.dernier); }      // retour sur un exercice déjà tenté : on retrouve son verdict
+  majPied();
+
+  return el("div.vue", {},
+    el("header.entete", {}, el("div.entete__sur", {}, "Exercice de démonstration"), el("h1", {}, ex.titre)),
+    el("div.exo__meta", {}, el("span.puce", {}, LIBELLE_TYPE[ex.type]), el("span.puce", {}, "jetable (lot 3)")),
+    el("div.exo__question", {}, ex.question),
+    ex.consigne ? el("div.exo__consigne", {}, ex.consigne) : null,
+    bloc, panneau, zoneRetour, pied);
+}
+
+/* Bac à sable : le même éditeur, sans exercice. Ctrl + Entrée exécute sur la base vivante. */
 const EXEMPLES = {
   test: "SELECT 1 AS test;",
   apercu:
@@ -406,13 +581,14 @@ GROUP BY statut
 ORDER BY statut;`
 };
 
-function pageDemo() {
-  const editeur = el("textarea.editeur-sql", {
-    id: "sql", spellcheck: "false", autocomplete: "off", autocapitalize: "off", "aria-label": "Requête SQL"
-  }, EXEMPLES.apercu);
+function pageBacASable() {
   const sortie = el("div.resultat", { "aria-live": "polite" });
   const etat = el("div.sql-etat", {});
   const puceTables = el("span.puce", {});
+  const editeur = editeurSQL({
+    valeur: Memoire.bac === null ? EXEMPLES.apercu : Memoire.bac, etiquette: "Requête SQL",
+    surExecuter: () => lancer(), surChange: v => { Memoire.bac = v; }
+  });
 
   function majEtat(extra) {
     puceTables.textContent = `${Moteur.nbTables()} table(s) en mémoire`;
@@ -421,44 +597,22 @@ function pageDemo() {
       el("span", {}, `prêt en ${Moteur.etat.msInit} ms`),
       el("span", {}, `base reconstruite en ${Moteur.etat.msBase} ms`),
       puceTables,
-      extra ? el("span", {}, extra) : null
-    );
+      ...(extra ? [el("span", {}, extra)] : []));
   }
-
   function lancer() {
-    const res = Moteur.executer(editeur.value);
-    const blocs = [];
-    res.jeux.forEach((jeu, i) => {
-      const n = jeu.lignes.length;
-      blocs.push(el("h3.resultat__titre", {},
-        (res.jeux.length > 1 ? `Résultat ${i + 1} — ` : "") + `${n} ligne${n > 1 ? "s" : ""}`));
-      blocs.push(tableResultat(jeu, res.limite));
-      if (n > res.limite) blocs.push(el("p.resultat__note", {}, `Affichage limité aux ${res.limite} premières lignes.`));
-    });
-    if (res.erreur) {
-      blocs.push(el("div.erreur-sql", { role: "alert" }, el("b", {}, "Erreur SQLite"), el("pre", {}, res.erreur)));
-    } else if (!res.jeux.length) {
-      blocs.push(el("p.muet", { style: "margin-top:12px" }, "Exécuté sans erreur. Cette requête ne renvoie aucune ligne."));
-    }
-    sortie.replaceChildren(...blocs);
+    const res = Moteur.executer(editeur.valeur());
+    sortie.replaceChildren(...blocsExecution(res));
     majEtat(`${res.ms} ms`);
   }
-
-  function exemple(cle) { editeur.value = EXEMPLES[cle]; lancer(); editeur.focus(); }
-
-  editeur.addEventListener("keydown", ev => {
-    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); lancer(); }
-  });
-
-  const bascule = el("button.btn.btn--nu", { type: "button", onclick: () => basculerTheme() }, "Thème clair / sombre");
+  function exemple(cle) { editeur.definir(EXEMPLES[cle]); lancer(); editeur.focus(); }
 
   const page = el("div.vue", {},
     el("header.entete", {},
-      el("div.entete__sur", {}, "Lot 2 — page de démonstration"),
+      el("div.entete__sur", {}, "Bac à sable"),
       el("h1", {}, "Bac à sable SQL"),
       el("p", {}, "Un vrai SQLite, dans ce seul fichier, sans réseau, avec la base d'une boutique en ligne. Ouvrez le « Schéma » (rail de navigation) pour voir ses tables et leurs relations, sans quitter cette page.")),
     el("section.carte", {},
-      editeur,
+      editeur.element,
       el("div.sql-barre", {},
         el("button.btn.btn--fort", { type: "button", onclick: lancer }, "Exécuter"),
         el("span.tres-muet", { style: "font-size:12.5px" }, "Ctrl + Entrée"),
@@ -474,10 +628,9 @@ function pageDemo() {
         el("button.btn", { type: "button", onclick: () => exemple("jointure") }, "Une jointure"),
         el("button.btn", { type: "button", onclick: () => exemple("agregat") }, "Commandes par statut"),
         el("span.sql-barre__espace"),
-        bascule),
+        el("button.btn.btn--nu", { type: "button", onclick: () => basculerTheme() }, "Thème clair / sombre")),
       etat),
-    sortie
-  );
+    sortie);
   majEtat();
   lancer();                         // la requête d'aperçu s'exécute dès l'ouverture
   return page;
@@ -493,19 +646,44 @@ function basculerTheme() {
   appliquerTheme(document.documentElement.dataset.theme === "sombre" ? "clair" : "sombre");
 }
 
-function coquille(contenu) {
+function coquille(contenu, actif = "") {
+  const lien = (href, cle, nomIcone, libelle) =>
+    el("a.rail__lien", { href, "aria-current": actif === cle ? "page" : null }, icone(nomIcone), el("span", {}, libelle));
   document.getElementById("app").replaceChildren(
     el("a.saut", { href: "#", onclick: ev => { ev.preventDefault(); document.getElementById("zone-contenu").focus(); } },
       "Aller au contenu"),
     el("aside.rail", {},
       el("div.rail__marque", {}, el("div.logo", {}, "R"), el("div.rail__nom", {}, "Requêt'R")),
       el("nav.rail__nav", { "aria-label": "Navigation principale" },
-        el("a.rail__lien", { href: "#/bac-a-sable", "aria-current": "page" }, icone("bacasable"), el("span", {}, "Bac à sable")),
+        lien("#/exercices", "exercices", "exercices", "Exercices"),
+        lien("#/bac-a-sable", "bac", "bacasable", "Bac à sable"),
         el("div.rail__sep"),
         Explorateur.bouton()),
       el("div.rail__bas", {}, el("div.tres-muet", { style: "font-size:11.5px" }, "Apprendre le SQL en pratiquant"))),
     el("main.principal", {}, el("div.contenu", { id: "zone-contenu", tabindex: "-1" }, contenu))
   );
+  Explorateur.majBouton();                       // le rail est reconstruit à chaque écran : le bouton retrouve son état (panneau ouvert ou non)
+}
+
+/** Navigation minimale par le fragment d'adresse (#/exercices, #/exercice/<id>, #/bac-a-sable). Provisoire : le Routeur de
+ *  Classe'R, porté au lot 4, la remplacera. L'explorateur n'est PAS une route : c'est un voile par-dessus l'écran en cours,
+ *  qui ne détruit jamais l'éditeur. */
+const PREFIXE_EXERCICE = "#/exercice/";
+function route(premiere = false) {
+  const h = location.hash || "#/exercices";
+  let page, actif = "exercices";
+  try {
+    if (h.startsWith(PREFIXE_EXERCICE)) {
+      const ex = CONTENU.exercices.find(x => x.id === decodeURIComponent(h.slice(PREFIXE_EXERCICE.length)));
+      page = ex ? pageExercice(ex) : pageExercices();
+    } else if (h === "#/bac-a-sable") { page = pageBacASable(); actif = "bac"; }
+    else page = pageExercices();
+  } catch (err) {
+    console.error(err);
+    page = el("div.erreur-sql", { role: "alert" }, el("b", {}, "Cet écran n'a pas pu s'afficher"), el("pre", {}, String(err && err.message || err)));
+  }
+  coquille(page, actif);
+  if (!premiere) { window.scrollTo(0, 0); document.getElementById("zone-contenu").focus({ preventScroll: true }); }
 }
 
 async function demarrer() {
@@ -515,7 +693,8 @@ async function demarrer() {
   coquille(el("p.muet", {}, "Chargement de SQLite…"));
   try {
     await Moteur.initialiser();
-    coquille(pageDemo());
+    window.addEventListener("hashchange", () => route());
+    route(true);
   } catch (err) {
     console.error(err);
     coquille(el("div.erreur-sql", { role: "alert" }, el("b", {}, "SQLite n'a pas pu démarrer"), el("pre", {}, String(err && err.message || err))));
