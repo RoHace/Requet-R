@@ -1,9 +1,9 @@
-/* Requêt'R — scénario navigateur, exécuté DANS la page par outils/cdp.cjs (hors livrable).
-   Il s'auto-contrôle : il renvoie une liste de [libellé, réussi, détail]. Il pilote le vrai DOM de requeter.html : formulations acceptées
-   (C1), refus différenciés, non évalué, date du jour (D033), C7 (un DELETE ne fausse pas Vérifier), C8 (produit cartésien), C14 (l'éditeur
-   survit à l'explorateur et à la navigation), corriger, predire, qcm, masquage d'un attendu 1×1 (D034), bac à sable, hors ligne.
-   ATTENTION : il s'appuie sur les 4 exercices de DÉMONSTRATION (demo-requete, demo-corriger, demo-predire, demo-qcm), jetables : au lot 6,
-   les remplacer par des exercices réels ou adapter les identifiants. */
+/* Requêt'R — scénario navigateur, exécuté DANS la page par outils/cdp.cjs (hors livrable). Lot 4 : reprend
+   les vérifications du lot 3 (formulations acceptées C1, refus différenciés, non évalué, date du jour D033,
+   C7, C8, C14, corriger, predire, qcm, masquage 1×1 D034, bac à sable, hors ligne) et ajoute l'onboarding,
+   la navigation sur toutes les routes, la Série recommandée (Session), le thème persisté et une certification.
+   ATTENTION : s'appuie sur les 4 exercices de DÉMONSTRATION (demo-requete, demo-corriger, demo-predire,
+   demo-qcm), jetables : au lot 6, les remplacer par des exercices réels ou adapter les identifiants. */
 (async () => {
   const attendre = ms => new Promise(r => setTimeout(r, ms));
   const R = [];
@@ -16,9 +16,84 @@
   const verifier = async sql => { saisir(sql); bouton("Vérifier").click(); await attendre(250); return retour(); };
   await attendre(500);
 
-  ok("démarrage : la liste des 4 exercices s'affiche", document.querySelectorAll(".liste-exos .carte").length === 4, document.body.innerText.slice(0, 200));
+  // ── Onboarding : modale non-fermable au premier démarrage (D049) ──
+  ok("onboarding : modale affichée au premier démarrage", !!document.querySelector(".modale"), document.body.innerText.slice(0, 120));
+  document.querySelector('input[name="experience-sql"][value="jamais"]').click();
+  bouton("Commencer").click();
+  await attendre(250);
+  ok("onboarding : fermée, profil marqué onboardingFait", !document.querySelector(".modale") && Store.etat.profil.onboardingFait === true);
 
-  // C1 : formulations alternatives toutes acceptées, via l'écran
+  // ── Route par défaut : #/accueil (D047) ──
+  ok("démarrage : écran d'accueil par défaut", location.hash === "" || location.hash === "#/accueil", location.hash);
+  ok("accueil : bannière et niveau affichés", !!document.querySelector(".accueil__banniere") && /Niveau 1/.test(document.body.innerText));
+
+  // ── Navigation sur toutes les routes du rail (D047) ──
+  for (const [chemin, attendu] of [
+    ["#/exercices", "Exercices"], ["#/lecons", "Aucune leçon pour l'instant"], ["#/missions", "Aucune mission pour l'instant"],
+    ["#/bac-a-sable", "Bac à sable SQL"], ["#/progression", "Compétences"], ["#/reglages", "Réglages"]
+  ]) {
+    await aller(chemin);
+    ok(`navigation ${chemin} : rendu sans erreur`, document.body.innerText.includes(attendu) && !document.querySelector(".erreur-sql"), document.body.innerText.slice(0, 150));
+  }
+  await aller("#/fiche");
+  ok("navigation #/fiche (hors rail) : coquille vide, accessible", /Aucune fiche pour l'instant/.test(document.body.innerText));
+
+  // ── Progression : 9 compétences et 20 certifications affichées ──
+  await aller("#/progression");
+  ok("progression : 9 compétences listées", document.querySelectorAll(".competence").length === 9, document.querySelectorAll(".competence").length);
+  ok("progression : 20 certifications listées", document.querySelectorAll(".certif").length === 20, document.querySelectorAll(".certif").length);
+
+  // ── Session : « Série recommandée » (branche l'emplacement inerte de D042) ──
+  await aller("#/exercices");
+  ok("exercices : sélecteur de palier actif (D047, remplace le sélecteur inerte de D042)", !document.querySelector(".segment button[disabled]"));
+  [...document.querySelectorAll(".carte--action")].find(b => /Série recommandée/.test(b.textContent)).click();
+  await attendre(250);
+  ok("Session démarrée : une question s'affiche, compteur de série visible", !!document.querySelector(".serie__compte"), document.body.innerText.slice(0, 150));
+  // Répond correctement à chaque question de la série, quel que soit son type, pour atteindre le bilan.
+  for (let i = 0; i < 10 && document.querySelector(".serie__compte"); i++) {
+    const t = document.querySelector("h1").textContent;
+    if (zone()) {
+      const ex = CONTENU.exercices.find(x => x.titre === t);
+      saisir(ex.solution); bouton("Vérifier").click(); await attendre(250);
+    } else if (document.querySelector("input.saisie-reponse")) {
+      const champ = document.querySelector("input.saisie-reponse");
+      const ex = CONTENU.exercices.find(x => x.titre === t);
+      champ.value = String(Attendus.predire(ex).nbLignes); bouton("Répondre").click(); await attendre(250);
+    } else if (document.querySelector(".choix")) {
+      const t2 = document.querySelector("h1").textContent;
+      const ex = CONTENU.exercices.find(x => x.titre === t2);
+      const texteBon = ex.options[ex.reponse];
+      [...document.querySelectorAll(".choix button")].find(b => b.textContent.includes(texteBon)).click(); await attendre(250);
+    }
+    const suite = bouton("Question suivante →") || bouton("Voir le bilan →");
+    if (suite) { suite.click(); await attendre(250); }
+  }
+  ok("Session : bilan de fin de série affiché", /bonne\(s\) réponse\(s\)|Sans faute/.test(document.body.innerText), document.body.innerText.slice(0, 200));
+  bouton("Retour à l'accueil").click();
+  await attendre(250);
+
+  // ── Certification : « Premier pas » obtenue après une première réussite ──
+  ok("certification : « Premier pas » obtenue pendant la série", !!Store.etat.certifications["premier-pas"], Store.etat.certifications);
+
+  // ── Thème : bascule et persiste dans Store (localStorage) ──
+  await aller("#/reglages");
+  bouton("Nuit").click();
+  await attendre(250);
+  ok("thème : data-theme sombre appliqué", document.documentElement.dataset.theme === "sombre");
+  await attendre(250);
+  ok("thème : persisté dans localStorage (requeter.etat)", JSON.parse(localStorage.getItem(CONFIG.cle)).reglages.theme === "sombre");
+  bouton("Jour").click();
+  await attendre(250);
+
+  // ── Export puis import : restaure un état identique (D047, critère d'acceptation) ──
+  const texteExport = Store.exporter();           // exporter() horodate etat.dernierExport AVANT de le sérialiser
+  const avantExport = JSON.stringify(Store.etat);  // capturé APRÈS, pour inclure ce même horodatage
+  Store.reinitialiser();
+  ok("export puis import : l'état change bien après réinitialisation", JSON.stringify(Store.etat) !== avantExport);
+  Store.importer(texteExport);
+  ok("export puis import : l'état est restauré à l'identique", JSON.stringify(Store.etat) === avantExport, JSON.stringify(Store.etat).slice(0, 200));
+
+  // ── C1 : formulations alternatives toutes acceptées, via l'écran ──
   await aller("#/exercice/demo-requete");
   const formulations = [
     "SELECT c.id, COUNT(o.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id GROUP BY c.id",
@@ -42,6 +117,11 @@
   ok("écriture : non évaluée", r.className.includes("--neutre") && /hors programme/.test(r.textContent), r.textContent);
   r = await verifier("SELECT date('now') AS d");
   ok("date('now') : message dédié, date de référence", /date du jour/.test(r.textContent) && /30 juin 2026/.test(r.textContent), r.textContent.slice(0, 250));
+
+  // ── Réussite comptée : XP affiché, maîtrise mise à jour (lot 4) ──
+  await aller("#/exercices"); await aller("#/exercice/demo-requete");
+  r = await verifier("SELECT c.id, COUNT(o.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id GROUP BY c.id");
+  ok("réussite comptée : badge XP affiché, ligne de progression présente", r.className.includes("--juste") && !!r.querySelector(".retour__xp") && !!r.querySelector(".retour__progres"), r.textContent.slice(0, 200));
 
   // C7
   saisir("DELETE FROM lignes_commande;"); bouton("Exécuter").click(); await attendre(150);
@@ -81,6 +161,7 @@
     && ![...document.querySelectorAll(".resultat__titre")].some(h => /Voici ce que SQLite renvoie/.test(h.textContent)));
   const champ = document.querySelector("input.saisie-reponse"); champ.value = "76"; bouton("Répondre").click(); await attendre(250);
   ok("predire : 76 accepté, résultat révélé, champ verrouillé", retour().className.includes("--juste") && champ.disabled && document.querySelectorAll(".resultat tbody tr").length === 8);
+  ok("predire : essai libre proposé après verrouillage (D037, qcm/predire)", !!document.querySelector(".essai"));
   await aller("#/exercices"); await aller("#/exercice/demo-predire");
   ok("predire : retour sur l'exercice déjà répondu, le verdict et le résultat sont retrouvés (pas rejoués avant une réponse)",
     retour().className.includes("--juste") && document.querySelector("input.saisie-reponse").disabled && document.querySelectorAll(".resultat tbody tr").length === 8);

@@ -18,6 +18,9 @@ const SOURCES = {
   moteur:      "src/moteur.js",
   comparateur: "src/comparateur.js",
   exercices:   "src/exercices.js",
+  store:       "src/store.js",
+  progression: "src/progression.js",
+  routeur:     "src/routeur.js",
   seed:        "src/seed.sql",
   sqljs:   "vendor/sql-wasm.js",
   wasm:    "vendor/sql-wasm.wasm"
@@ -62,7 +65,10 @@ const valeurs = {
   MOTEUR:       texte(SOURCES.moteur),
   COMPARATEUR:  texte(SOURCES.comparateur),
   EXERCICES:    texte(SOURCES.exercices),
-  APP:          texte(SOURCES.app)
+  APP:          texte(SOURCES.app),
+  STORE:        texte(SOURCES.store),
+  PROGRESSION:  texte(SOURCES.progression),
+  ROUTEUR:      texte(SOURCES.routeur)
 };
 verifierInlinable(SOURCES.sqljs, valeurs.VENDOR_SQLJS);
 verifierInlinable(SOURCES.contenu, valeurs.CONTENU);
@@ -70,6 +76,9 @@ verifierInlinable(SOURCES.moteur, valeurs.MOTEUR);
 verifierInlinable(SOURCES.comparateur, valeurs.COMPARATEUR);
 verifierInlinable(SOURCES.exercices, valeurs.EXERCICES);
 verifierInlinable(SOURCES.app, valeurs.APP);
+verifierInlinable(SOURCES.store, valeurs.STORE);
+verifierInlinable(SOURCES.progression, valeurs.PROGRESSION);
+verifierInlinable(SOURCES.routeur, valeurs.ROUTEUR);
 
 /* 3. Chaque marqueur du gabarit doit être connu et présent exactement une fois. */
 const trouves = [...gabarit.matchAll(/@@([A-Z0-9_]+)@@/g)].map(m => m[1]);
