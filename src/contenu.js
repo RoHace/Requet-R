@@ -121,7 +121,10 @@ const CONTENU = {
        retour             : explication, retenir
      comparer = { ordonne: false | true | { cles: [indices de colonnes] }, colonnes: false | true, texte: "strict" | "souple" } (D029 à D031).
      Règles d'auteur (D029, D030) : la consigne énumère les colonnes dans l'ordre attendu ; la clé de tri figure dans le SELECT ;
-     jamais `cles` quand un LIMIT peut couper un groupe d'ex æquo (ordre total en consigne, ou un rang). */
+     jamais `cles` quand un LIMIT peut couper un groupe d'ex æquo (ordre total en consigne, ou un rang).
+     Métadonnées optionnelles pour l'Autotest (lot 5, D051) : pieges (tableau d'identifiants P1 à P11 de SCHEMA.md, déclaré
+     par l'auteur, sert la couverture) ; zeroLigneAttendu (chaîne non vide justifiant qu'une solution renvoie 0 ligne
+     volontairement — jamais un booléen, pour qu'il ne devienne pas un interrupteur de confort). */
   exercices: [
     {
       id: "demo-qcm", demo: true, type: "qcm",
@@ -185,16 +188,24 @@ const CONTENU = {
     }
   ]
 };
+/* Chapitres (Parcours, D050) : une leçon courte suivie des exercices qui l'appliquent, repris de CHAPITRES de Classe'R
+   (Reference/classer-v2.html). Les exercices ne sont pas dupliqués : `exercices` cite leurs identifiants.
+     { id, niveau (un id de PALIERS), titre, duree, resume,
+       lecon: { intro, points: [...], exemple: { titre, code, resultat, commentaire }, astuce },
+       exercices: [ids de CONTENU.exercices] }
+   Vide jusqu'au lot 6+ (D047/D048). */
 const CHAPITRES = [];
 
 /* Paliers du programme (D021) : la liste et l'ordre ne bougent pas, elle sert à grouper et filtrer l'écran « Exercices »
-   et à rattacher chaque compétence de CONTENU.competences (D043) à un seul palier. */
+   et à rattacher chaque compétence de CONTENU.competences (D043) à un seul palier.
+   `termine` (D051) : posé à la main par l'auteur quand le palier est déclaré fini — l'Autotest (lot 5) fait alors passer
+   ses deux contrôles de couverture d'un avertissement à un échec bloquant pour ce palier. */
 const PALIERS = [
-  { id: "P1", titre: "Lire" },
-  { id: "P2", titre: "Agréger" },
-  { id: "P3", titre: "Croiser" },
-  { id: "P4", titre: "Raisonner" },
-  { id: "P5", titre: "Métier" }
+  { id: "P1", titre: "Lire", termine: false },
+  { id: "P2", titre: "Agréger", termine: false },
+  { id: "P3", titre: "Croiser", termine: false },
+  { id: "P4", titre: "Raisonner", termine: false },
+  { id: "P5", titre: "Métier", termine: false }
 ];
 
 /* Clauses SQL : structure du futur lexique (lot 4). Le niveau « Clause » des indices en est tiré, comme le niveau « Fonction »

@@ -830,9 +830,11 @@ proteger("IN-03", "Indices.pour : chaque exercice de démonstration SQL ou qcm f
   const predireRevele = Ex.Indices.pour(predire()).some(i => i.revele);
   egal("IN-03", "Indices.pour : chaque exercice de démonstration SQL ou qcm finit par une solution révélée ; predire n'en révèle aucune", [sansFin, predireRevele], [[], false]);
 });
-proteger("IN-04", "toutes les clauses citées par les exercices existent dans CLAUSES, et CLAUSES reste petite (≤ 6)", () => {
+proteger("IN-04", "toutes les clauses citées par les exercices existent dans CLAUSES", () => {
+  // Pas de plafond sur la taille de CLAUSES (D051) : le ≤ 6 d'origine n'était qu'une borne de démonstration du lot 3 ;
+  // le lexique complet du lot 6+ la dépassera forcément, et un lexique n'a pas de taille maximale.
   const inconnues = demos().filter(e => e.clause && !Ex.CLAUSES[e.clause]).map(e => e.id);
-  egal("IN-04", "toutes les clauses citées par les exercices existent dans CLAUSES, et CLAUSES reste petite (≤ 6)", [inconnues, Object.keys(Ex.CLAUSES).length <= 6], [[], true]);
+  egal("IN-04", "toutes les clauses citées par les exercices existent dans CLAUSES", inconnues, []);
 });
 
 /* Pureté (C9) : le comparateur n'utilise ni date, ni hasard, ni DOM, ni horloge */
