@@ -535,8 +535,11 @@ function blocEcart(v) {
 /* carteVerdict a été fondue dans carteRetour (src/routeur.js, D045) : même logique de rendu, avec en plus le
  *  badge d'XP et la ligne de progression par compétence. */
 
-/** Indices gradués : Piste → Clause → Exemple → Solution (verrouillée, révélée en dernier). */
-function panneauIndices(ex, e) {
+/** Indices gradués : Piste → Clause → Exemple → Solution (verrouillée, révélée en dernier).
+ *  `avancer`, facultatif, remplace l'incrémentation directe de `e.indices` — nécessaire à Mission (D057, audit),
+ *  dont chaque indice doit aussi compter dans `indicesTotal` (étoiles de fin de mission), pas seulement dans le
+ *  compteur de l'étape en cours. Sans lui (Session/Parcours), le comportement est inchangé. */
+function panneauIndices(ex, e, avancer) {
   const liste = Indices.pour(ex);
   if (!liste.length) return null;
   const panneau = el("div.indices");
@@ -549,7 +552,7 @@ function panneauIndices(ex, e) {
     panneau.replaceChildren(bouton, ...liste.slice(0, e.indices).map(i =>
       el("div.indice" + (i.revele ? ".indice--solution" : ""), {}, el("b", {}, i.titre), i.revele && ex.type !== "qcm" ? el("pre", {}, i.texte) : el("div", {}, i.texte))));
   };
-  bouton.addEventListener("click", () => { if (e.indices < liste.length) { e.indices++; dessiner(); } });
+  bouton.addEventListener("click", () => { if (e.indices < liste.length) { avancer ? avancer() : e.indices++; dessiner(); } });
   dessiner();
   /* Révélation directe (sans passer par chaque indice intermédiaire) : propose explicite après deux tentatives
    * ratées (carteRetour, D-lot 6), jamais la seule façon d'y arriver — la chaîne d'indices reste disponible. */

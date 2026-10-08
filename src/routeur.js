@@ -472,8 +472,7 @@ function carteAcces(titre, desc, href, desactive = false) {
 
 /** Ligne détaillée d'une compétence (D057, repris de Classe'R `ligneCompetence`) : puce « Validée », série sans
  *  indice (pips), érosion en cours, bouton de reprise, et le compte d'exercices réussis — utilisée par l'accueil
- *  (« À retravailler »). Volontairement pas encore branchée sur l'écran Progression (hors sujet de ce correctif,
- *  voir DECISIONS.md). */
+ *  (« À retravailler ») et par l'écran Progression. */
 function ligneCompetence(c) {
   const m = c.effective !== undefined ? c : { ...c, ...Progression.maitrise(c.id) };
   const exos = CONTENU.exercices.filter(x => x.competence === c.id && Contenu.accessible(x));
@@ -519,7 +518,9 @@ Vues.accueil = () => {
       el("div.accueil__mot", {},
         el("h1", {}, `Bonjour${Store.etat.profil.prenom ? ", " + Store.etat.profil.prenom : ""}`),
         el("p.muet", { style: "font-size:14px;margin-top:5px" }, "On apprend le SQL en écrivant des requêtes, pas en lisant des cours."),
-        prochain ? el("button.btn.btn--fort", { type: "button", style: "margin-top:14px", onclick: reprendre }, `Continuer : ${prochain.titre}`) : null)),
+        prochain
+          ? el("button.btn.btn--fort", { type: "button", style: "margin-top:14px", onclick: reprendre }, `Continuer : ${prochain.titre}`)
+          : el("p.muet", { style: "font-size:13.5px;margin-top:14px" }, "Tous les chapitres sont terminés. Les exercices et les missions vous attendent pour approfondir."))),
     el("div.carte", {},
       el("div", { style: "display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px" },
         el("div", {}, el("h2", {}, `Niveau ${niv.niveau}`), el("div.tres-muet", { style: "font-size:13px" }, niv.titre)),
@@ -703,12 +704,11 @@ Vues.progression = () => {
       el("div.carte.stat", {}, el("div.stat__val", {}, Object.values(Store.etat.exercices).reduce((n, h) => n + h.reussites, 0)), el("div.stat__lib", {}, "exercices réussis"))),
     el("div.section", {},
       el("div.section__titre", {}, el("h2", {}, "Compétences")),
-      el("div.pile", {}, comps.map(c => el("div.competence", {},
-        el("div.competence__tete", {}, el("span.competence__nom", {}, c.nom), el("span.competence__val", {}, c.jamaisTravaillee ? "jamais travaillée" : `${c.effective} %`)),
-        cellules(c.effective, 10, false, { fantome: c.brute > c.effective ? c.brute : 0, ok: c.brute === 100 }),
-        el("p.competence__desc", {}, c.desc))))),
+      el("div.carte", {}, comps.map(c => ligneCompetence(c)))),
     el("div.section", {},
-      el("div.section__titre", {}, el("h2", {}, "Certifications")),
+      el("div.section__titre", {},
+        el("h2", {}, "Certifications"),
+        el("span.tres-muet", { style: "font-size:13px" }, `${Object.keys(Store.etat.certifications).length} / ${CONTENU.certifications.length}`)),
       el("div.certifs", {}, CONTENU.certifications.map(c => el("div.certif", { "data-obtenue": Store.etat.certifications[c.id] ? "1" : "0" },
         el("span.certif__ico", {}, c.ico), el("b", {}, c.nom), el("span", {}, c.desc))))));
 };
@@ -830,9 +830,10 @@ function ecranLecon(ch, rafraichir) {
           onclick: () => zoneTest.replaceChildren(...blocsExecution(Moteur.executer(l.exemple.code))) }, "Tester cet exemple"),
         zoneTest),
       l.astuce ? el("div.lecon__astuce", {}, el("b", {}, "Astuce. "), l.astuce) : null),
-    el("div", { style: "margin-top:20px" },
+    el("div", { style: "margin-top:20px;display:flex;gap:10px;flex-wrap:wrap" },
       el("button.btn.btn--fort", { type: "button", onclick: () => { Parcours.commencer(); rafraichir(); } },
-        ch.exercices.length ? `À vous — ${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""}` : "Aucun exercice pour l'instant")));
+        ch.exercices.length ? `À vous — ${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""}` : "Aucun exercice pour l'instant"),
+      el("button.btn.btn--nu", { type: "button", onclick: () => { Parcours.quitter(); rafraichir(); } }, "Quitter le chapitre")));
 }
 
 /** Bilan de fin de chapitre, sur le modèle de Classe'R (bilanChapitre) : plus sobre que le bilan de série libre
@@ -929,6 +930,10 @@ function ecranMission(rafraichir) {
     surExecuter: () => { sortie.replaceChildren(...blocsExecution(Moteur.executer(editeur.valeur()))); },
     surVerifier: () => verifier()
   });
+  // D057 (audit) : les indices existaient côté Mission (`indice()`, `terminer()` compte `indicesTotal` pour les
+  // étoiles) sans jamais être affichés. `avancer` fait passer chaque clic par `Mission.indice()` plutôt que par
+  // l'incrémentation directe que fait panneauIndices pour un exercice (Session/Parcours), afin que indicesTotal suive.
+  const panneau = panneauIndices(etape, m, () => Mission.indice());
   function verifier() {
     const res = Mission.verifier(editeur.valeur());
     retourZone.replaceChildren(carteRetour({ type: "requete" }, res, {}));
@@ -942,14 +947,42 @@ function ecranMission(rafraichir) {
     el("div.sql-barre", {},
       el("button.btn", { type: "button", onclick: () => { sortie.replaceChildren(...blocsExecution(Moteur.executer(editeur.valeur()))); } }, "Exécuter"),
       el("button.btn.btn--fort", { type: "button", onclick: verifier }, "Vérifier")),
-    sortie, retourZone,
+    sortie, retourZone, panneau,
     el("button.btn.btn--nu", { type: "button", onclick: () => { Mission.quitter(); rafraichir(); } }, "Quitter la mission"));
+}
+
+/** Bilan de fin de mission (D057, audit) : `Mission.terminer()` calcule étoiles/XP/certifications depuis le lot 4
+ *  et pose `etat: "bilan"`, mais rien ne le lisait — `ecranMission` continuait de s'afficher, sans rien de tout
+ *  cela. Modèle : `ecranBilan` (série libre) pour les certifications, `listeMissions` pour les étoiles (`★`/`☆`,
+ *  déjà en usage) ; pas de détail par compétence avant/après comme Classe'R (`bilanMission`), faute d'un
+ *  équivalent de `avantSession`/`avantChapitre` côté Mission — à ajouter si besoin, pas dans ce correctif. */
+function ecranMissionBilan(rafraichir) {
+  const m = Mission.courante, def = m.def;
+  return el("div", {},
+    el("div.bilan-hero", {},
+      el("div.entete__sur", {}, "Mission terminée"),
+      el("span.etoiles", { role: "img", "aria-label": `${m.etoiles} étoile(s) sur 3` }, "★".repeat(m.etoiles) + "☆".repeat(3 - m.etoiles)),
+      el("h1", {}, def.titre),
+      el("div.bilan-hero__chiffres", {},
+        el("div.bilan-hero__chiffre", {}, el("b", {}, `+${m.xp}`), el("span", {}, "XP gagnés")),
+        el("div.bilan-hero__chiffre", {}, el("b", {}, `${def.etapes.length}`), el("span", {}, def.etapes.length > 1 ? "étapes franchies" : "étape franchie")),
+        m.indicesTotal ? el("div.bilan-hero__chiffre", {}, el("b", {}, String(m.indicesTotal)), el("span", {}, m.indicesTotal > 1 ? "indices utilisés" : "indice utilisé")) : null)),
+    m.certifs.length ? el("div.section", {},
+      el("div.section__titre", {}, el("h2", {}, "Certifications obtenues")),
+      el("div.certifs", {}, m.certifs.map(c => el("div.certif", { "data-obtenue": "1" }, el("span.certif__ico", {}, c.ico), el("b", {}, c.nom), el("span", {}, c.desc))))) : null,
+    el("div.exo__pied", {},
+      el("button.btn.btn--fort", { type: "button", onclick: () => { Mission.quitter(); rafraichir(); } }, "Autres missions"),
+      el("button.btn", { type: "button", onclick: () => { Mission.courante = null; Mission.recommencer(def.id); rafraichir(); } }, "Refaire sans indice"),
+      el("a.btn.btn--nu", { href: "#/accueil", onclick: () => { Mission.courante = null; } }, "Retour à l'accueil")));
 }
 
 Vues.missions = () => {
   const v = el("div.vue");
   const zone = el("div");
-  const rafraichir = () => zone.replaceChildren(Mission.courante ? ecranMission(rafraichir) : listeMissions(rafraichir));
+  const rafraichir = () => zone.replaceChildren(
+    !Mission.courante ? listeMissions(rafraichir)
+    : Mission.courante.etat === "bilan" ? ecranMissionBilan(rafraichir)
+    : ecranMission(rafraichir));
   rafraichir();
   v.append(zone);
   return v;
