@@ -535,6 +535,7 @@ function ecranBilan(rafraichir) {
   const retenirVus = [...new Set(s.liste.map(e => e.retenir).filter(Boolean))];
   return el("div", {},
     el("div.bilan-hero", {},
+      el("div.entete__sur", {}, "Bilan"),
       el("h1", {}, parfait ? "Sans faute !" : `${s.reussites} bonne(s) réponse(s) sur ${total}`),
       el("p", {}, parfait ? "Toutes les réponses étaient justes." : "Chaque passage rapproche de la maîtrise."),
       el("div.bilan-hero__chiffres", {},
@@ -577,7 +578,7 @@ Vues.progression = () => {
   const niv = Progression.niveau();
   const comps = Progression.competencesVisibles().map(c => ({ ...c, ...Progression.maitrise(c.id) }));
   return el("div.vue", {},
-    el("header.entete", {}, el("h1", {}, "Progression")),
+    el("header.entete", {}, el("div.entete__sur", {}, "Progression"), el("h1", {}, "Progression")),
     el("div.grille.grille--3", {},
       el("div.carte.stat", {}, el("div.stat__val", {}, Store.etat.xp), el("div.stat__lib", {}, "XP total")),
       el("div.carte.stat", {}, el("div.stat__val", {}, niv.niveau), el("div.stat__lib", {}, niv.titre)),
@@ -596,7 +597,7 @@ Vues.progression = () => {
 
 Vues.reglages = () => {
   const theme = Store.etat.reglages.theme;
-  const champPrenom = el("input.saisie", { type: "text", value: Store.etat.profil.prenom, "aria-label": "Prénom" });
+  const champPrenom = el("input.saisie", { type: "text", value: Store.etat.profil.prenom, placeholder: "Votre prénom", "aria-label": "Votre prénom" });
   champPrenom.addEventListener("change", () => Store.modifier(e => { e.profil.prenom = champPrenom.value; }));
   const fichier = el("input", { type: "file", accept: "application/json", hidden: true });
   fichier.addEventListener("change", () => {
@@ -609,41 +610,48 @@ Vues.reglages = () => {
     lecteur.readAsText(f);
   });
   return el("div.vue", {},
-    el("header.entete", {}, el("h1", {}, "Réglages")),
+    el("header.entete", {}, el("div.entete__sur", {}, "Réglages"), el("h1", {}, "Réglages")),
     el("div.carte", {},
-      el("div.ligne-reglage", {}, el("div", {}, el("b", {}, "Thème")),
+      el("div.ligne-reglage", {}, el("div", {}, el("h3", {}, "Thème"), el("p", {}, "L'application s'ouvre toujours avec ce réglage.")),
         el("div.segment", { role: "group", "aria-label": "Thème" },
           el("button", { type: "button", "aria-pressed": String(theme === "clair"), onclick: () => { Store.modifier(e => { e.reglages.theme = "clair"; }); appliquerTheme(); Routeur.rendre(); } }, "Jour"),
           el("button", { type: "button", "aria-pressed": String(theme === "sombre"), onclick: () => { Store.modifier(e => { e.reglages.theme = "sombre"; }); appliquerTheme(); Routeur.rendre(); } }, "Nuit"))),
-      el("div.ligne-reglage", {}, el("div", {}, el("b", {}, "Prénom"), el("p", {}, "Affiché sur l'accueil.")), champPrenom)),
+      el("div.ligne-reglage", {}, el("div", { style: "flex:1" }, el("h3", {}, "Prénom"), el("p", {}, "Utilisé uniquement pour vous accueillir.")),
+        el("div", { style: "width:180px" }, champPrenom))),
     el("div.section", {},
       el("div.section__titre", {}, el("h2", {}, "Vos données")),
       el("div.carte", {},
-        el("div.ligne-reglage", {}, el("div", {}, el("b", {}, "Export"), el("p", {}, Store.etat.dernierExport ? `Dernier export : ${Store.etat.dernierExport.slice(0, 10)}` : "Jamais exportée.")),
+        el("div.ligne-reglage", {}, el("div", {}, el("h3", {}, "Exporter la progression"), el("p", {}, "Un fichier JSON à conserver ou à transférer sur un autre poste.")),
           el("button.btn", { type: "button", onclick: () => { Store.exporter(); Toast.afficher("Progression exportée.", "accent"); Routeur.rendre(); } }, "Exporter")),
-        el("div.ligne-reglage", {}, el("div", {}, el("b", {}, "Import"), el("p", {}, "Restaure un fichier exporté depuis Requêt'R.")),
+        el("div.ligne-reglage", {}, el("div", {}, el("h3", {}, "Importer une progression"), el("p", {}, "Remplace la progression actuelle par celle du fichier.")),
           el("div", {}, fichier, el("button.btn", { type: "button", onclick: () => fichier.click() }, "Importer"))),
-        el("div.ligne-reglage", {}, el("div", {}, el("b", {}, "Tout effacer"), el("p", {}, "Remet la progression à zéro, sur cet appareil seulement.")),
+        el("div.ligne-reglage", {}, el("div", {}, el("h3", {}, "Tout effacer"), el("p", {}, "Supprime XP, compétences et certifications. Sans retour possible.")),
           el("button.btn.btn--danger", { type: "button", onclick: () => {
             Modale.ouvrir({
-              titre: "Tout effacer ?",
-              corps: el("p", {}, "La progression de cet appareil sera remise à zéro. Cette action ne peut pas être annulée."),
+              titre: "Effacer toute la progression ?",
+              corps: el("p", {}, "XP, compétences et certifications seront supprimés. Exportez d'abord si vous souhaitez les conserver."),
               actions: fermer => [
                 el("button.btn", { type: "button", onclick: fermer }, "Annuler"),
-                el("button.btn.btn--danger", { type: "button", onclick: () => { Store.reinitialiser(); appliquerTheme(); fermer(); Routeur.rendre(); } }, "Tout effacer")
+                el("button.btn.btn--danger", { type: "button", onclick: () => { Store.reinitialiser(); appliquerTheme(); fermer(); Routeur.rendre(); } }, "Effacer")
               ]
             });
-          } }, "Tout effacer")))),
+          } }, "Effacer")),
+        el("div.note", {}, el("b", {}, "Exportez votre progression régulièrement. "),
+          "Tout est stocké dans ce navigateur, sur cet appareil uniquement. Vider l'historique, changer de navigateur ou passer en navigation privée efface définitivement votre progression. Un export par semaine suffit à ne jamais rien perdre.",
+          el("div", { style: "margin-top:8px;font-size:12.5px;opacity:.8" },
+            Store.etat.dernierExport
+              ? `Dernier export : ${new Date(Store.etat.dernierExport).toLocaleDateString("fr-FR")}`
+              : "Aucun export effectué pour l'instant.")))),
     el("div.section", {},
       el("div.section__titre", {}, el("h2", {}, "Contenus installés")),
       el("div.carte", {}, CONTENU.packs.map(pk => el("div.ligne-reglage", {},
-        el("div", {}, el("b", {}, pk.nom), el("p", {}, pk.desc)),
+        el("div", { style: "flex:1" }, el("h3", {}, pk.nom), el("p", {}, pk.desc)),
         el("button.btn", { type: "button", onclick: () => { Packs.basculer(pk.id); Routeur.rendre(); } }, Packs.actif(pk.id) ? "Désactiver" : "Activer"))))),
     el("p.tres-muet", { style: "font-size:12px;margin-top:24px" }, `Requêt'R ${CONFIG.version} · ${CONTENU.exercices.length} exercice(s) · ${CONTENU.missions.length} mission(s)`));
 };
 
 Vues.lecons = () => el("div.vue", {},
-  el("header.entete", {}, el("h1", {}, "Leçons")),
+  el("header.entete", {}, el("div.entete__sur", {}, "Leçons"), el("h1", {}, "Leçons")),
   CHAPITRES.length
     ? el("div.pile", {}, CHAPITRES.map(ch => el("div.chapitre", {}, ch.titre)))
     : el("div.vide", {}, el("div.vide__boite", {},
@@ -658,7 +666,7 @@ Vues.fiche = () => el("div.vue", {},
 
 function listeMissions(rafraichir) {
   return el("div", {},
-    el("header.entete", {}, el("h1", {}, "Missions")),
+    el("header.entete", {}, el("div.entete__sur", {}, "Missions"), el("h1", {}, "Missions")),
     CONTENU.missions.length
       ? el("div.pile", {}, CONTENU.missions.map(m => {
           const enr = Store.etat.missions[m.id];
