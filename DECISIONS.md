@@ -410,6 +410,13 @@ Volontairement hors de portée, affiché en PIED de rapport (pas en tête, pour 
 **Conséquences.** Les 4 exercices `demo: true` (lot 3) restent soumis aux contrôles par exercice (preuve que l'outil fonctionne avant que le vrai contenu n'arrive) mais sont exclus des deux contrôles de couverture et du contrôle de distribution QCM (ils disparaîtront au lot 6, D038, et ne représentent pas du contenu réel).
 **Statut.** Acceptée.
 
+## D052 — Fidélité visuelle à Classe'R : un écart assumé (titre d'exercice en série)
+
+**Contexte.** Une revue de fidélité visuelle, menée après le lot 5, a comparé les écrans portés au lot 4 (D047/D048) à leurs équivalents dans `Reference/classer-v2.html`. Plusieurs oublis ont été corrigés (sur-titre `.entete__sur` manquant sur Progression, Leçons, Missions et le Bilan de série ; carte Réglages reconstruite à l'identique — largeur du champ Prénom, libellés en `<h3>`, textes, bloc `.note` avec la date du dernier export, qui avait disparu pendant le portage ; carte « Contenus installés » avec `Packs.compter`, bouton d'état, note de bas de carte). Un point a été signalé puis explicitement tranché comme un écart volontaire, pas un oubli : l'écran de question en série (`ecranSerie`, `src/routeur.js`) affiche un `header.entete` avec le titre de l'exercice (`ex.titre`) ; Classe'R (`ecranQuestion`, `Reference/classer-v2.html:9284`) n'affiche aucun titre à cet endroit, seulement des puces compétence/catégorie/difficulté (`.exo__meta`).
+**Décision.** Cet écart est assumé, pas corrigé. En tableur, la question de Classe'R tient en une phrase courte et se suffit à elle-même. En SQL, une consigne fait souvent deux ou trois lignes : un titre court donne un repère avant de la lire. `ecranSerie` garde donc son `header.entete > h1` avec `ex.titre` ; Classe'R n'est pas la référence sur ce point précis.
+**Conséquences.** Une future revue de fidélité ne doit pas signaler cet écart à nouveau : il est consigné ici, pas oublié.
+**Statut.** Acceptée.
+
 ---
 
 ## Questions ouvertes

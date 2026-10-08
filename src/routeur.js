@@ -35,7 +35,22 @@ const Packs = {
       if (i === -1) e.reglages.packsDesactives.push(id); else e.reglages.packsDesactives.splice(i, 1);
     });
   },
-  normaliser() { /* aucun pack n'est désactivé par défaut (packsDesactives commence vide) : rien à faire */ }
+  /** Nombre d'exercices et de missions d'un pack (porté de Classe'R, pour la carte « Contenus installés »).
+   *  Le contenu livré sans `pack` déclaré est rattaché au premier pack de CONTENU.packs ci-dessous. */
+  compter(id) {
+    return {
+      exercices: CONTENU.exercices.filter(e => e.pack === id).length,
+      missions: CONTENU.missions.filter(m => m.pack === id).length
+    };
+  },
+  normaliser() {
+    const defaut = CONTENU.packs[0] && CONTENU.packs[0].id;
+    if (defaut) {
+      CONTENU.exercices.forEach(e => { if (!e.pack) e.pack = defaut; });
+      CONTENU.missions.forEach(m => { if (!m.pack) m.pack = defaut; });
+    }
+    /* aucun pack n'est désactivé par défaut (packsDesactives commence vide) : rien d'autre à faire */
+  }
 };
 
 /* ── Contenu : filtrage par palier (D047), remplace le sélecteur inerte du lot 3 (D042) ────────── */
@@ -427,7 +442,8 @@ Vues.accueil = () => {
       Illus.paysage(),
       el("div.accueil__mot", {},
         el("h1", {}, `Bonjour${Store.etat.profil.prenom ? ", " + Store.etat.profil.prenom : ""}`),
-        prochain ? el("a.btn.btn--fort", { href: "#/lecons" }, `Continuer : ${prochain.titre}`) : null)),
+        el("p.muet", { style: "font-size:14px;margin-top:5px" }, "On apprend le SQL en écrivant des requêtes, pas en lisant des cours."),
+        prochain ? el("a.btn.btn--fort", { style: "margin-top:14px", href: "#/lecons" }, `Continuer : ${prochain.titre}`) : null)),
     el("div.grille.grille--2", {},
       el("div.carte.stat", {}, el("div.stat__val", {}, `Niveau ${niv.niveau}`), el("div.stat__lib", {}, `${niv.titre} · ${niv.xpDansNiveau}/${niv.xpRequis} XP`)),
       el("div.carte.stat", {}, el("div.stat__val", {}, Progression.xpDuJour()), el("div.stat__lib", {}, `XP aujourd'hui (objectif ${PROGRESSION_CONFIG.objectifQuotidien})`))),
@@ -440,9 +456,9 @@ Vues.accueil = () => {
     el("div.section", {},
       el("div.section__titre", {}, el("h2", {}, "Continuer")),
       el("div.grille.grille--3", {},
-        carteAcces("Exercice rapide", "Une série adaptée à votre progression.", "#/exercices"),
+        carteAcces("Exercice rapide", "2 minutes, une notion à la fois.", "#/exercices"),
         carteAcces("Mission pratique", CONTENU.missions.length ? "Un scénario pas à pas." : "Arrive avec le contenu.", "#/missions", CONTENU.missions.length === 0),
-        carteAcces("Essayer librement", "Un vrai SQLite, sans exercice.", "#/bac-a-sable"))),
+        carteAcces("Essayer librement", "Une base vierge, sans consigne ni correction.", "#/bac-a-sable"))),
     pf.length ? el("div.section", {},
       el("div.section__titre", {}, el("h2", {}, "À retravailler")),
       el("div.pile", {}, pf.map(c => el("div.competence", {},
@@ -643,10 +659,20 @@ Vues.reglages = () => {
               ? `Dernier export : ${new Date(Store.etat.dernierExport).toLocaleDateString("fr-FR")}`
               : "Aucun export effectué pour l'instant.")))),
     el("div.section", {},
-      el("div.section__titre", {}, el("h2", {}, "Contenus installés")),
-      el("div.carte", {}, CONTENU.packs.map(pk => el("div.ligne-reglage", {},
-        el("div", { style: "flex:1" }, el("h3", {}, pk.nom), el("p", {}, pk.desc)),
-        el("button.btn", { type: "button", onclick: () => { Packs.basculer(pk.id); Routeur.rendre(); } }, Packs.actif(pk.id) ? "Désactiver" : "Activer"))))),
+      el("div.section__titre", {}, el("h2", {}, "Contenus installés"),
+        el("span.tres-muet", { style: "font-size:13px" }, `${CONTENU.packs.length} pack(s)`)),
+      el("div.carte", {}, CONTENU.packs.map(pk => {
+        const n = Packs.compter(pk.id);
+        const actif = Packs.actif(pk.id);
+        return el("div.ligne-reglage", {},
+          el("div", { style: "flex:1" }, el("h3", {}, pk.nom),
+            el("p", {}, `${pk.desc} ${n.exercices} exercices, ${n.missions} missions.`)),
+          el("button.btn" + (actif ? "" : ".btn--nu"), {
+            type: "button", onclick: () => { Packs.basculer(pk.id); Routeur.rendre(); }
+          }, actif ? "Actif" : "Désactivé"));
+      })),
+      el("p.tres-muet", { style: "font-size:12.5px;margin-top:10px" },
+        "Désactiver un contenu le met de côté sans rien effacer de votre progression.")),
     el("p.tres-muet", { style: "font-size:12px;margin-top:24px" }, `Requêt'R ${CONFIG.version} · ${CONTENU.exercices.length} exercice(s) · ${CONTENU.missions.length} mission(s)`));
 };
 
