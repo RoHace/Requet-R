@@ -608,7 +608,73 @@ try {
 } catch (e) { erreurEx = e && e.message; }
 condition("EX-00", "src/exercices.js et src/contenu.js se chargent sous Node, sans DOM", !erreurEx, "aucune erreur", erreurEx || "aucune erreur");
 
-const demos = () => Ex.CONTENU.exercices.filter(e => e.demo);
+/* Fixtures locales, un exercice par type (D038/D051) : ces tests exercent le MOTEUR (comparateur, types
+   d'exercice, indices), jamais le contenu pédagogique — qui change de lot en lot (lot 6 : chapitre 0 et
+   palier 1) et ne doit jamais faire casser les tests du moteur. Ce sont les quatre exercices `demo: true`
+   du lot 3, retirés de src/contenu.js au lot 6 : conservés ici, à l'identique, pour que ces tests restent
+   indépendants de ce que src/contenu.js contient à un instant donné. */
+const FIXTURE_QCM = {
+  id: "demo-qcm", type: "qcm",
+  niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 1,
+  titre: "COUNT(*) ou COUNT(ville) ?",
+  question: "Dans la table clients, certains clients n'ont pas de ville renseignée (la valeur est NULL). Que donne SELECT COUNT(ville) FROM clients, comparé à SELECT COUNT(*) FROM clients ?",
+  options: [
+    "Un nombre plus petit : COUNT(ville) ne compte que les villes renseignées",
+    "Le même nombre : COUNT compte toujours toutes les lignes",
+    "Une erreur : COUNT n'accepte pas de nom de colonne",
+    "NULL, parce qu'au moins une ville manque"
+  ],
+  reponse: 0,
+  piste: "COUNT(*) compte des lignes ; COUNT(ville) compte des valeurs. Une ville vide est-elle une valeur ?",
+  clause: "COUNT",
+  exemple: "SELECT COUNT(*), COUNT(note) FROM commandes; renvoie 70 puis 32, parce que 38 commandes n'ont pas de note.",
+  explication: "COUNT(*) compte toutes les lignes ; COUNT(ville) saute celles où la ville est NULL. Ici : 40 clients, mais 36 villes renseignées.",
+  retenir: "COUNT(*) compte les lignes ; COUNT(colonne) ignore les NULL."
+};
+const FIXTURE_REQUETE = {
+  id: "demo-requete", type: "requete",
+  niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 2,
+  titre: "Les commandes de chaque client",
+  question: "Pour chaque client, affiche son identifiant et son nombre de commandes. Les clients qui n'ont jamais commandé doivent apparaître, avec 0.",
+  consigne: "Deux colonnes, dans cet ordre : l'identifiant du client, puis le nombre de commandes.",
+  solution: "SELECT c.id, COUNT(o.id) AS nb_commandes\nFROM clients AS c\nLEFT JOIN commandes AS o ON o.client_id = c.id\nGROUP BY c.id",
+  comparer: {},
+  piste: "Une jointure ordinaire écarte les clients qui n'ont aucune commande. Laquelle les garde ?",
+  clause: "LEFT JOIN",
+  exemple: "SELECT p.nom, c.nom FROM produits AS p LEFT JOIN categories AS c ON c.id = p.categorie_id;",
+  explication: "LEFT JOIN garde tous les clients, même ceux sans commande : leurs colonnes de commandes valent alors NULL. COUNT(o.id) ne compte que les identifiants de commande renseignés : un client sans commande obtient 0. Le nom de la colonne du résultat n'a pas d'importance, ni l'ordre des lignes.",
+  retenir: "Après un LEFT JOIN, COUNT(colonne) ne compte pas les lignes sans correspondance, COUNT(*) les compte."
+};
+const FIXTURE_CORRIGER = {
+  id: "demo-corriger", type: "corriger",
+  niveau: "P1", competence: "lire-filtrer", categorie: "Détection d'erreur", difficulte: 1,
+  titre: "Du plus cher au moins cher",
+  question: "Cette requête devrait afficher les produits à plus de 100 €, du plus cher au moins cher. Elle ne le fait pas : répare-la.",
+  consigne: "Deux colonnes, dans cet ordre : le nom, puis le prix.",
+  depart: "SELECT nom, prix\nFROM produits\nWHERE prix > 100\nORDER BY prix",
+  solution: "SELECT nom, prix\nFROM produits\nWHERE prix > 100\nORDER BY prix DESC, id",
+  comparer: { ordonne: { cles: [1] } },
+  piste: "Exécute la requête : les bonnes lignes sortent-elles dans le bon sens ?",
+  clause: "ORDER BY",
+  exemple: "SELECT nom FROM clients ORDER BY nom DESC;",
+  explication: "ORDER BY trie par défaut du plus petit au plus grand ; DESC inverse le tri. Deux produits ont le même prix (1 299 € pour deux d'entre eux, 449 € pour deux autres) : la consigne ne demande pas de les départager, leur ordre relatif n'a donc pas d'importance.",
+  retenir: "ORDER BY colonne trie du plus petit au plus grand ; ajoute DESC pour l'inverse."
+};
+const FIXTURE_PREDIRE = {
+  id: "demo-predire", type: "predire",
+  niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+  titre: "Combien de lignes ?",
+  question: "Sans l'exécuter : combien de lignes cette requête renvoie-t-elle ?",
+  requete: "SELECT c.id, o.id AS commande\nFROM clients AS c\nLEFT JOIN commandes AS o ON o.client_id = c.id",
+  predit: "nbLignes",
+  piste: "Chaque commande donne une ligne. Un client qui n'a aucune commande disparaît-il, avec un LEFT JOIN ?",
+  clause: "LEFT JOIN",
+  exemple: "Avec 3 articles dont un jamais commandé, articles LEFT JOIN commandes renvoie une ligne par commande, plus une ligne (avec NULL) pour l'article jamais commandé.",
+  explication: "Les 70 commandes donnent chacune une ligne ; le LEFT JOIN ajoute une ligne, avec NULL, pour chacun des 6 clients sans commande : 76 lignes. Un JOIN ordinaire n'en aurait renvoyé que 70.",
+  retenir: "LEFT JOIN renvoie au moins une ligne par ligne de la table de gauche."
+};
+const FIXTURES = [FIXTURE_QCM, FIXTURE_REQUETE, FIXTURE_CORRIGER, FIXTURE_PREDIRE];
+const demos = () => FIXTURES;
 proteger("EX-01", "quatre exercices de démonstration, un par type, identifiants uniques", () => {
   const d = demos();
   egal("EX-01", "quatre exercices de démonstration, un par type, identifiants uniques",

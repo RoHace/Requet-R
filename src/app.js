@@ -36,6 +36,15 @@ function el(selecteur, attrs = {}, ...enfants) {
   return n;
 }
 
+/** Garde-fou pour un `replaceChildren` natif appelé HORS de `el()` (qui, lui, filtre déjà ses enfants ci-dessus) :
+ *  passer `null` directement au `replaceChildren` natif du DOM ne le filtre pas, il l'affiche comme le TEXTE
+ *  "null" — bug récurrent (lot 3, puis lot 6 dans `rendreQuestion`) chaque fois qu'un ternaire conditionnel
+ *  (`condition ? el(...) : null`) est passé tel quel. À utiliser pour tout `replaceChildren` natif dont les
+ *  enfants peuvent être conditionnels, plutôt que de refiltrer au cas par cas à chaque nouvel appel. */
+function remplacerEnfants(noeud, ...enfants) {
+  noeud.replaceChildren(...enfants.flat().filter(c => c !== null && c !== undefined && c !== false));
+}
+
 const ICONES = {
   exercices: '<rect x="3.5" y="3" width="13" height="14" rx="1.5"/><path d="M7 7.5h6M7 10.5h6M7 13.5h3.5"/>',
   bacasable: '<rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M6.5 8.5 9 10.5l-2.5 2M11 13h3"/>',
@@ -44,7 +53,8 @@ const ICONES = {
   lecons: '<rect x="4" y="3.5" width="12" height="13" rx="1.5"/><path d="M4 7.5h12M8 11h5M8 14h5"/>',
   missions: '<path d="M5 3v14M5 3h9l-2 3 2 3H5"/>',
   progression: '<path d="M4 16V9M9 16V5M14 16v-7M4 16h12"/>',
-  reglages: '<circle cx="10" cy="10" r="2.6"/><path d="M10 3.5v2M10 14.5v2M3.5 10h2M14.5 10h2M5.4 5.4l1.4 1.4M13.2 13.2l1.4 1.4M5.4 14.6l1.4-1.4M13.2 6.8l1.4-1.4"/>'
+  reglages: '<circle cx="10" cy="10" r="2.6"/><path d="M10 3.5v2M10 14.5v2M3.5 10h2M14.5 10h2M5.4 5.4l1.4 1.4M13.2 13.2l1.4 1.4M5.4 14.6l1.4-1.4M13.2 6.8l1.4-1.4"/>',
+  lexique: '<path d="M4 4.5h5a2 2 0 0 1 2 2v9a1.5 1.5 0 0 0-1.5-1.5H4Z"/><path d="M16 4.5h-5a2 2 0 0 0-2 2v9a1.5 1.5 0 0 1 1.5-1.5H16Z"/>'
 };
 function icone(nom) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -283,6 +293,31 @@ const Explorateur = (() => {
       bascule.textContent = ouvrir ? "Masquer l'instruction CREATE TABLE" : "Voir l'instruction CREATE TABLE";
     } }, "Voir l'instruction CREATE TABLE");
 
+    /* Aperçu limité à 5 lignes par défaut (Moteur.schema()) ; « Voir les N lignes » charge la table ENTIÈRE à la
+       demande (une seule fois, mise en cache dans `toutesLesLignes`) — certains exercices (prédire un nombre de
+       lignes sur toute une table) ne se vérifient pas avec 5 lignes seulement. */
+    const nomsColonnes = t.colonnes.map(c => c.nom);
+    const titreApercu = el("h4.schema-sous", {}, t.lignes > 5 ? "Les 5 premières lignes" : "Toutes les lignes");
+    const zoneApercu = el("div.resultat", {}, tableResultat({ colonnes: nomsColonnes, lignes: t.apercu }, 5));
+    let toutesLesLignes = null, deplie = false;
+    const boutonTout = t.lignes > 5 ? el("button.btn.btn--nu", { type: "button" }, `Voir les ${t.lignes} lignes`) : null;
+    if (boutonTout) boutonTout.addEventListener("click", () => {
+      deplie = !deplie;
+      if (deplie) {
+        if (!toutesLesLignes) {
+          const r = Moteur.executer(`SELECT * FROM "${t.nom}"`);
+          toutesLesLignes = r.jeux.length ? r.jeux[r.jeux.length - 1].lignes : [];
+        }
+        titreApercu.textContent = `Toutes les ${t.lignes} lignes`;
+        zoneApercu.replaceChildren(tableResultat({ colonnes: nomsColonnes, lignes: toutesLesLignes }, t.lignes));
+        boutonTout.textContent = "Réduire aux 5 premières lignes";
+      } else {
+        titreApercu.textContent = "Les 5 premières lignes";
+        zoneApercu.replaceChildren(tableResultat({ colonnes: nomsColonnes, lignes: t.apercu }, 5));
+        boutonTout.textContent = `Voir les ${t.lignes} lignes`;
+      }
+    });
+
     return el("div.schema-detail", {},
       el("div.schema-detail__tete", {},
         el("h3.mono", {}, t.nom),
@@ -302,8 +337,7 @@ const Explorateur = (() => {
           el("td.schema-note", {}, (doc.colonnes && doc.colonnes[c.nom]) || ""))))))),
       el("p.schema-cle", {}, el("b", {}, "Référencée par : "),
         refs.length ? el("span.schema-tags", {}, refs.map(r => saut(r.table, cible(r.table, r.colonne)))) : "aucune autre table"),
-      el("h4.schema-sous", {}, t.lignes > 5 ? "Les 5 premières lignes" : "Toutes les lignes"),
-      el("div.resultat", {}, tableResultat({ colonnes: t.colonnes.map(c => c.nom), lignes: t.apercu }, 5)),
+      titreApercu, zoneApercu, boutonTout,
       el("div.schema-sql-bloc", {}, bascule, code));
   }
 
@@ -368,6 +402,75 @@ const Explorateur = (() => {
       btn = el("button.rail__lien.rail__lien--outil", { "data-actif": "0", type: "button",
         title: "Schéma de la base", onclick: () => API.basculer() },
         icone("schema"), el("span", {}, "Schéma"));
+      return btn;
+    }
+  };
+  return API;
+})();
+
+/** Lexique : vocabulaire de base (VOCABULAIRE) et clauses SQL (CLAUSES), consultable par-dessus n'importe quel
+ *  écran — même mécanique que l'Explorateur ci-dessus (voile, piège de focus, Échap), sur le modèle du Lexique
+ *  de Classe'R (`Reference/classer-v2.html:5513`). Deux groupes plutôt qu'un seul : le vocabulaire se lit une
+ *  fois pour comprendre une base, les clauses se consultent sans cesse en écrivant une requête. Une recherche
+ *  filtre les deux groupes à la fois, sur le terme et sur la définition. */
+const Lexique = (() => {
+  let voile = null, btn = null;
+
+  function entrees(filtre) {
+    const f = filtre.trim().toLowerCase();
+    const garder = (terme, texte) => !f || terme.toLowerCase().includes(f) || texte.toLowerCase().includes(f);
+    return {
+      vocabulaire: Object.entries(VOCABULAIRE).filter(([terme, texte]) => garder(terme, texte)),
+      clauses: Object.entries(CLAUSES).filter(([terme, c]) => garder(terme, `${c.syntaxe} ${c.aide}`))
+    };
+  }
+
+  /** Un groupe = un bandeau collant (`.lexique__groupe`) suivi à PLAT de ses lignes, jamais un conteneur unique
+   *  qui engloberait le bandeau ET les lignes : sticky ne fonctionne proprement qu'entre frères (motif exact de
+   *  Classe'R, `Reference/classer-v2.html:5552`). Les envelopper ensemble fait du bloc entier un pavé sticky qui
+   *  se superpose au groupe suivant au lieu d'être remplacé par son bandeau — bug trouvé après le lot 6. */
+  function groupe(titre, items, rendreUn) {
+    return items.length ? [el("div.lexique__groupe", {}, titre), ...items.map(rendreUn)] : [];
+  }
+
+  function construire() {
+    const liste = el("div.lexique__liste", {});
+    const champ = el("input.saisie", { type: "search", "aria-label": "Rechercher dans le lexique", placeholder: "Rechercher un mot ou une clause…" });
+    const versFiche = terme => { API.fermer(); Routeur.aller(`/fiche/${encodeURIComponent(terme)}`); };
+    const dessiner = () => {
+      const { vocabulaire, clauses } = entrees(champ.value);
+      const corps = [
+        ...groupe("Vocabulaire", vocabulaire, ([terme, texte]) => el("p.fn-ligne", {}, el("span.fn-ligne__sig.mono", {}, terme), el("span.tres-muet", {}, texte))),
+        ...groupe("Clauses SQL", clauses, ([terme, c]) => el("button.fn-ligne.fn-ligne--lien", { type: "button", title: `Voir la fiche de ${terme}`, onclick: () => versFiche(terme) },
+          el("span.fn-ligne__sig.mono", {}, terme), el("span.tres-muet", {}, `${c.syntaxe} — ${c.aide}.`), el("span.fn-ligne__fleche", {}, "›")))
+      ];
+      remplacerEnfants(liste, ...corps, corps.length ? null : el("p.muet", { style: "padding:14px 0" }, "Aucune entrée ne correspond à cette recherche."));
+    };
+    champ.addEventListener("input", dessiner);
+    dessiner();
+
+    const boite = el("div.lexique", { role: "dialog", "aria-modal": "true", "aria-label": "Lexique" },
+      el("div.lexique__tete", {},
+        el("h2", {}, "Lexique"),
+        el("button.btn.btn--nu", { type: "button", onclick: () => API.fermer(), "aria-label": "Fermer le lexique" }, "✕")),
+      champ, liste,
+      el("p.tres-muet.lexique__pied", {}, "Le vocabulaire d'une base de données, et les clauses SQL rencontrées dans les exercices."));
+    voile = el("div.voile.voile--lexique", { onclick: ev => { if (ev.target === voile) API.fermer(); } }, boite);
+    document.body.append(voile);
+    piegeFocus(voile, { fermer: () => API.fermer() });
+    setTimeout(() => champ.focus(), 60);
+  }
+
+  const API = {
+    estOuvert: () => !!voile,
+    ouvrir() { if (!voile) { construire(); API.majBouton(); } },
+    fermer() { if (voile) { voile.remove(); voile = null; API.majBouton(); } },
+    basculer() { API.estOuvert() ? API.fermer() : API.ouvrir(); },
+    majBouton() { if (btn) btn.dataset.actif = API.estOuvert() ? "1" : "0"; },
+    bouton() {
+      btn = el("button.rail__lien.rail__lien--outil", { "data-actif": "0", type: "button",
+        title: "Lexique : vocabulaire et clauses SQL", onclick: () => API.basculer() },
+        icone("lexique"), el("span", {}, "Lexique"));
       return btn;
     }
   };
@@ -448,6 +551,10 @@ function panneauIndices(ex, e) {
   };
   bouton.addEventListener("click", () => { if (e.indices < liste.length) { e.indices++; dessiner(); } });
   dessiner();
+  /* Révélation directe (sans passer par chaque indice intermédiaire) : propose explicite après deux tentatives
+   * ratées (carteRetour, D-lot 6), jamais la seule façon d'y arriver — la chaîne d'indices reste disponible. */
+  panneau.reveler = () => { if (e.indices < liste.length) { e.indices = liste.length; dessiner(); } };
+  panneau.totalIndices = liste.length;
   return panneau;
 }
 
@@ -465,15 +572,16 @@ function puceDifficulte(n) {
   return el("span.puce", { "aria-label": `Difficulté ${n} sur 3` }, "●".repeat(n) + "○".repeat(3 - n));
 }
 
+/** Carte compacte (D055) : titre, type et difficulté, puce d'action — une seule ligne de puces. La compétence
+ *  est retirée : regroupée par chapitre (D055), la liste répète la même compétence sur tous ses exercices sans
+ *  rien distinguer ; elle reste affichée sur l'écran de l'exercice et sur les cartes de « Travailler une
+ *  compétence », qui la montrent une fois chacune. */
 function carteExercice(ex) {
   return el("button.carte.carte--action", { type: "button", onclick: () => { location.hash = `#/exercice/${ex.id}`; } },
     el("div.carte__entete", {}, el("h3.liste-exos__titre", {}, ex.titre), puceEtatExercice(ex)),
     el("div.exo__meta", {},
       el("span.puce", {}, LIBELLE_TYPE[ex.type]),
-      ex.niveau ? el("span.puce", {}, ex.niveau) : null,
-      ex.competence ? el("span.puce", {}, (CONTENU.competences.find(c => c.id === ex.competence) || {}).nom || ex.competence) : null,
-      ex.difficulte ? puceDifficulte(ex.difficulte) : null),
-    el("p.muet", { style: "font-size:13px" }, ex.question));
+      ex.difficulte ? puceDifficulte(ex.difficulte) : null));
 }
 
 /* pageExercices/pageExercice, les deux emplacements inertes et carteVerdict sont remplacés au lot 4 par

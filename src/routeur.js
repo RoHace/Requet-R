@@ -157,6 +157,10 @@ function carteRetour(ex, v, meta = {}) {
   if (v.pistes && v.pistes.length) corps.push(el("div.retour__pistes", {}, el("b", {}, "Où regarder"), el("ul", {}, v.pistes.map(p => el("li", {}, p)))));
   (v.notes || []).forEach(n => corps.push(el("p.retour__note", {}, n.texte)));
   if (!juste && !neutre && v.ecart && v.obtenu && ex.type !== "qcm" && ex.type !== "predire") corps.push(comparaisonResultats(v, { ordreCompte: !!(ex.comparer && ex.comparer.ordonne) }), blocEcart(v));
+  if (!juste && !neutre && (ex.type === "requete" || ex.type === "corriger") && (v.tentatives || 0) >= 2 && meta.reveler)
+    corps.push(el("div.retour__reveler", {},
+      el("p", {}, "Vous n'avez pas trouvé après plusieurs essais : vous pouvez voir la requête attendue."),
+      el("button.btn.btn--fort", { type: "button", onclick: meta.reveler }, "Voir la requête attendue")));
   if (termine && ex.explication) corps.push(el("p", {}, ex.explication));
   if (termine && ex.retenir) corps.push(el("div.retour__usage", {}, el("b", {}, "À retenir"), ex.retenir));
   if (meta.progres) corps.push(el("div.retour__progres", {}, meta.progres));
@@ -275,7 +279,9 @@ const Session = {
   quitter() { Session.courante = null; }
 };
 
-/* ── Parcours : chapitres (leçon puis exercices) — structure seule, CHAPITRES reste vide jusqu'au lot 6+ ──── */
+/* ── Parcours : chapitres (leçon puis exercices) — câblé au lot 6 (D050/D047 n'en posaient que la structure).
+   `repondre` reprend exactement la mécanique de Session.repondre (XP, maîtrise, certifications, D046) ; les deux
+   partagent ensuite le même écran de question, `rendreQuestion` ci-dessous. ──────────────────────────────────── */
 const Parcours = {
   courant: null,
   chapitre(id) { return CHAPITRES.find(c => c.id === id) || null; },
@@ -290,10 +296,36 @@ const Parcours = {
   ouvrir(id) {
     const ch = Parcours.chapitre(id);
     if (!ch) return false;
-    Parcours.courant = { ch, etape: "lecon", index: 0, liste: Parcours.exercicesDe(ch), reussites: 0, indices: 0, etat: "question", dernier: null };
+    const liste = Parcours.exercicesDe(ch);
+    const avantChapitre = {};
+    [...new Set(liste.map(e => e.competence).filter(Boolean))].forEach(c => { avantChapitre[c] = Progression.maitrise(c).brute; });
+    Parcours.courant = {
+      ch, etape: "lecon", index: 0, liste, reussites: 0, xp: 0, certifs: [], indices: 0, aidesUtilisees: 0,
+      etat: "question", dernier: null, avantChapitre
+    };
     return true;
   },
   commencer() { const p = Parcours.courant; if (!p || !p.liste.length) return; p.etape = "exercices"; p.index = 0; p.etat = "question"; p.dernier = null; p.indices = 0; },
+
+  repondre(reponse) {
+    const p = Parcours.courant, ex = p.liste[p.index];
+    const res = TYPES_EXERCICE[ex.type].valider(ex, reponse);
+    const h = () => (Store.etat.exercices[ex.id] || { tentatives: 0 }).tentatives;
+    if (res.compte) {
+      const maj = noteReponse(ex, res, p.indices);
+      p.xp += maj.xp;
+      if (res.reussi) p.reussites++;
+      if (p.indices > 0) p.aidesUtilisees++;
+      p.certifs.push(...maj.certifs);
+      if (maj.certifs.length) maj.certifs.forEach(c => Toast.afficher(`Certification obtenue : ${c.nom}`, "accent"));
+      p.dernier = { ...res, tentatives: h(), indices: p.indices, xp: maj.xp, progres: ligneProgres(ex, res, maj) };
+    } else {
+      p.dernier = { ...res, tentatives: h(), indices: p.indices };
+    }
+    p.etat = "retour";
+    return p.dernier;
+  },
+
   suivant() {
     const p = Parcours.courant;
     if (p.index < p.liste.length - 1) { p.index++; p.etat = "question"; p.dernier = null; p.indices = 0; }
@@ -375,7 +407,7 @@ const Mission = (() => {
   return API;
 })();
 
-/* ── Onboarding (D049) : question factuelle (« as-tu déjà écrit une requête SQL ? »), pas une auto-évaluation
+/* ── Onboarding (D049) : question factuelle (« avez-vous déjà écrit une requête SQL ? »), pas une auto-évaluation
    de niveau — D012 pose que tout le monde démarre au palier 0, mais un reconverti peut avoir déjà pratiqué SQL
    ailleurs ; lui demander de s'auto-évaluer le ferait répondre au hasard, une question factuelle non. ──────── */
 function onboarding() {
@@ -403,7 +435,7 @@ function onboarding() {
     corps: el("div", {},
       el("p", {}, "Quelques mots pour commencer."),
       el("div.champ", {}, el("label.champ__lib", {}, "Comment vous appeler ?"), champPrenom),
-      el("div.champ", {}, el("label.champ__lib", {}, "As-tu déjà écrit une requête SQL ?"), boiteOptions)),
+      el("div.champ", {}, el("label.champ__lib", {}, "Avez-vous déjà écrit une requête SQL ?"), boiteOptions)),
     actions: fermer => [el("button.btn.btn--fort", { type: "button", onclick: () => {
       Store.modifier(e => {
         e.profil.prenom = champPrenom.value.trim();
@@ -427,28 +459,81 @@ function appliquerTheme() {
 /* ── Vues : écrans de l'application ──────────────────────────────────────────────────────────── */
 const Vues = {};
 
+/** Tuile d'accès (D057 : fidélité à Classe'R) — toujours une puce : « Ouvrir » (accent) si activée, « Bientôt »
+ *  sinon. Même problème que la liste d'exercices (D056) : sans cette puce, rien n'indique qu'on peut cliquer. */
 function carteAcces(titre, desc, href, desactive = false) {
-  if (desactive) return el("button.carte.carte--action", { type: "button", disabled: true }, el("h3", {}, titre), el("p.muet", {}, desc));
-  return el("a.carte.carte--action", { href }, el("h3", {}, titre), el("p.muet", {}, desc));
+  const tete = el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:10px" },
+    el("h3", {}, titre),
+    desactive ? el("span.puce", {}, "Bientôt") : el("span.puce.puce--accent", {}, "Ouvrir"));
+  const corps = el("p.muet", { style: "font-size:13px;margin-top:6px" }, desc);
+  if (desactive) return el("button.carte.carte--action", { type: "button", disabled: true }, tete, corps);
+  return el("a.carte.carte--action", { href }, tete, corps);
+}
+
+/** Ligne détaillée d'une compétence (D057, repris de Classe'R `ligneCompetence`) : puce « Validée », série sans
+ *  indice (pips), érosion en cours, bouton de reprise, et le compte d'exercices réussis — utilisée par l'accueil
+ *  (« À retravailler »). Volontairement pas encore branchée sur l'écran Progression (hors sujet de ce correctif,
+ *  voir DECISIONS.md). */
+function ligneCompetence(c) {
+  const m = c.effective !== undefined ? c : { ...c, ...Progression.maitrise(c.id) };
+  const exos = CONTENU.exercices.filter(x => x.competence === c.id && Contenu.accessible(x));
+  const reussis = exos.filter(x => ((Store.etat.exercices[x.id] || {}).reussites || 0) > 0).length;
+  const restants = exos.length - reussis;
+  const etat = Store.etat.competences[c.id] || {};
+  const eff = Math.round(m.effective);
+  const efface = m.jamaisTravaillee ? 0 : Math.max(0, (m.brute || 0) - eff);
+  const valide = !m.jamaisTravaillee && eff >= 100;
+  const serie = Math.min(etat.serie || 0, PROGRESSION_CONFIG.serieConsolidation);
+  const jours = etat.derniereActivite ? Math.floor((Date.now() - new Date(etat.derniereActivite).getTime()) / 86400000) : null;
+  const aReprendre = m.jamaisTravaillee || efface > 0 || m.effective < PROGRESSION_CONFIG.seuilRevision;
+
+  const meta = [];
+  if (valide) meta.push(el("span.puce.puce--ok", {}, "Validée"));
+  else if (!m.jamaisTravaillee) meta.push(el("span.competence__serie", {}, "Sans indice d'affilée", pips(serie, PROGRESSION_CONFIG.serieConsolidation)));
+  if (efface > 0) meta.push(el("span.puce.puce--erosion", {}, `S'efface : −${efface} pts` + (jours !== null ? ` après ${jours} jours sans pratique` : "")));
+  if (aReprendre) meta.push(el("button.btn.btn--nu.competence__reprise", { type: "button", onclick: () => {
+    if (!Session.courante && !Session.demarrer(c.id, 5)) { Toast.afficher("Aucun exercice disponible pour cette compétence."); return; }
+    Routeur.aller("/exercices");
+  } }, m.jamaisTravaillee ? "Commencer" : "S'entraîner"));
+
+  return el("div.competence", {},
+    el("div.competence__tete", {},
+      el("div.competence__nom", {}, m.nom),
+      el("div.competence__val", {}, m.jamaisTravaillee ? "non travaillée" : `${eff} %`)),
+    cellules(eff, 10, false, { fantome: efface > 0 ? m.brute : undefined, ok: valide }),
+    meta.length ? el("div.competence__meta", {}, meta) : null,
+    el("div.competence__desc", {},
+      exos.length ? `${m.desc} · ${reussis} exercice(s) réussi(s) sur ${exos.length}` + (restants ? ` — ${restants} jamais réussi(s)` : "") : m.desc));
 }
 
 Vues.accueil = () => {
   const niv = Progression.niveau();
   const pf = Progression.pointsFaibles(3);
   const prochain = Parcours.suivantConseille();
+  const xpJour = Progression.xpDuJour();
   const exporteDepuis = Store.etat.dernierExport ? (Date.now() - new Date(Store.etat.dernierExport).getTime()) / 86400000 : Infinity;
+  const reprendre = () => { Parcours.ouvrir(prochain.id); Routeur.aller("/lecons"); };
   return el("div.vue", {},
     el("div.accueil__banniere", {},
       Illus.paysage(),
       el("div.accueil__mot", {},
         el("h1", {}, `Bonjour${Store.etat.profil.prenom ? ", " + Store.etat.profil.prenom : ""}`),
         el("p.muet", { style: "font-size:14px;margin-top:5px" }, "On apprend le SQL en écrivant des requêtes, pas en lisant des cours."),
-        prochain ? el("a.btn.btn--fort", { style: "margin-top:14px", href: "#/lecons" }, `Continuer : ${prochain.titre}`) : null)),
+        prochain ? el("button.btn.btn--fort", { type: "button", style: "margin-top:14px", onclick: reprendre }, `Continuer : ${prochain.titre}`) : null)),
+    el("div.carte", {},
+      el("div", { style: "display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px" },
+        el("div", {}, el("h2", {}, `Niveau ${niv.niveau}`), el("div.tres-muet", { style: "font-size:13px" }, niv.titre)),
+        el("div.mono.muet", { style: "font-size:13px" }, `${niv.xpDansNiveau} / ${niv.xpRequis} XP`)),
+      cellules(niv.pourcent, 20)),
+    el("div.grille.grille--2", { style: "margin-top:14px" },
+      el("div.carte.stat", {},
+        el("div.stat__val", {}, `${xpJour} / ${PROGRESSION_CONFIG.objectifQuotidien}`),
+        el("div.stat__lib", {}, "XP aujourd'hui"),
+        el("div", { style: "margin-top:10px" }, cellules(Math.min(100, xpJour / PROGRESSION_CONFIG.objectifQuotidien * 100), 12, true))),
+      el("div.carte.stat", {},
+        el("div.stat__val", {}, Store.etat.serie.jours),
+        el("div.stat__lib", {}, Store.etat.serie.jours <= 1 ? "jour de pratique" : "jours d'affilée"))),
     el("div.grille.grille--2", {},
-      el("div.carte.stat", {}, el("div.stat__val", {}, `Niveau ${niv.niveau}`), el("div.stat__lib", {}, `${niv.titre} · ${niv.xpDansNiveau}/${niv.xpRequis} XP`)),
-      el("div.carte.stat", {}, el("div.stat__val", {}, Progression.xpDuJour()), el("div.stat__lib", {}, `XP aujourd'hui (objectif ${PROGRESSION_CONFIG.objectifQuotidien})`))),
-    el("div.grille.grille--2", {},
-      el("div.carte.stat", {}, el("div.stat__val", {}, Store.etat.serie.jours), el("div.stat__lib", {}, "jour(s) de pratique d'affilée")),
       el("div.carte.stat", {}, el("div.stat__val", {}, Object.values(Store.etat.exercices).reduce((n, h) => n + h.reussites, 0)), el("div.stat__lib", {}, "exercices réussis"))),
     Store.etat.xp >= 100 && exporteDepuis > 7
       ? el("div.note", {}, "Vous n'avez pas exporté votre progression depuis plus de 7 jours : elle ne vit que sur cet appareil (Réglages → Exporter).")
@@ -460,10 +545,17 @@ Vues.accueil = () => {
         carteAcces("Mission pratique", CONTENU.missions.length ? "Un scénario pas à pas." : "Arrive avec le contenu.", "#/missions", CONTENU.missions.length === 0),
         carteAcces("Essayer librement", "Une base vierge, sans consigne ni correction.", "#/bac-a-sable"))),
     pf.length ? el("div.section", {},
-      el("div.section__titre", {}, el("h2", {}, "À retravailler")),
-      el("div.pile", {}, pf.map(c => el("div.competence", {},
-        el("div.competence__tete", {}, el("span.competence__nom", {}, c.nom), el("span.competence__val", {}, c.jamaisTravaillee ? "jamais travaillée" : `${c.effective} %`)),
-        cellules(c.effective))))) : null);
+      el("div.section__titre", {},
+        el("h2", {}, "À retravailler"),
+        el("div.accueil__revision", {},
+          pf[0] && pf[0].effective < 100
+            ? el("button.btn.btn--fort", { type: "button", onclick: () => {
+                if (!Session.courante && !Session.demarrer(pf[0].id, 5)) { Toast.afficher("Aucun exercice disponible pour cette compétence."); return; }
+                Routeur.aller("/exercices");
+              } }, `Réviser · ${pf[0].nom}`)
+            : null,
+          el("a", { href: "#/progression", style: "font-size:13px" }, "Tout voir"))),
+      el("div.carte", {}, pf.map(c => ligneCompetence(c)))) : null);
 };
 
 function ecranChoix(rafraichir) {
@@ -472,13 +564,13 @@ function ecranChoix(rafraichir) {
   exosAccessibles.forEach(ex => { if (!ex.competence) return; (parCompetence.get(ex.competence) || parCompetence.set(ex.competence, []).get(ex.competence)).push(ex); });
   const total = exosAccessibles.length;
   const lancer = competence => { if (Session.demarrer(competence, 5)) rafraichir(); else Toast.afficher("Aucun exercice disponible pour l'instant."); };
-  const parPalier = new Map();
-  exosAccessibles.forEach(ex => { const cle = ex.niveau || "?"; (parPalier.get(cle) || parPalier.set(cle, []).get(cle)).push(ex); });
+  const citesParChapitre = new Set(CHAPITRES.flatMap(ch => ch.exercices));
+  const orphelins = exosAccessibles.filter(ex => !citesParChapitre.has(ex.id));
   return el("div", {},
     el("header.entete", {},
-      el("div.entete__sur", {}, "Lot 3 — exercices de démonstration"),
+      el("div.entete__sur", {}, "Exercices"),
       el("h1", {}, "Exercices"),
-      el("p", {}, "Quatre exercices jetables, un par type, pour éprouver la mécanique. Le contenu pédagogique arrive à partir du lot 6.")),
+      el("p", {}, "Tous les exercices, regroupés par compétence ou par palier. Pour un parcours guidé, leçon par leçon, voir « Leçons ».")),
     Contenu.selecteur(rafraichir),
     el("button.carte.carte--action", { type: "button", onclick: () => lancer(null), disabled: total === 0 },
       el("div.carte__entete", {}, el("h3", {}, "Série recommandée"), el("span.puce.puce--accent", {}, "Démarrer")),
@@ -493,30 +585,34 @@ function ecranChoix(rafraichir) {
           cellules(m.effective));
       }))),
     el("div.section", {},
-      el("div.section__titre", {}, el("h2", {}, "Tous les exercices, par palier")),
-      PALIERS.filter(p => parPalier.has(p.id)).map(p => el("div.section", {},
-        el("div.section__titre", {}, el("h2", {}, `${p.id} — ${p.titre}`)),
-        el("div.liste-exos", {}, parPalier.get(p.id).map(carteExercice))))));
+      el("div.section__titre", {}, el("h2", {}, "Tous les exercices, par chapitre")),
+      CHAPITRES.map(ch => {
+        const exos = Parcours.exercicesDe(ch).filter(Contenu.accessible);
+        return exos.length ? el("div.section", {}, el("div.section__titre", {}, el("h2", {}, ch.titre)), el("div.liste-exos", {}, exos.map(carteExercice))) : null;
+      }),
+      orphelins.length ? el("div.section", {}, el("div.section__titre", {}, el("h2", {}, "Autres exercices")), el("div.liste-exos", {}, orphelins.map(carteExercice))) : null));
 }
 
-function ecranSerie(rafraichir) {
-  const s = Session.courante;
-  if (s.etat === "bilan") return ecranBilan(rafraichir);
-  const ex = s.liste[s.index];
+/** Écran de question commun à une série libre (Session) et à un chapitre (Parcours) : les deux exposent le même
+ *  état (`liste`, `index`, `indices`, `dernier`) et les mêmes trois actions (répondre, passer à la suite, quitter) —
+ *  seuls le libellé du bouton de sortie et les trois callbacks diffèrent (`ctrl`). */
+function rendreQuestion(etat, ctrl, rafraichir) {
+  const ex = etat.liste[etat.index];
   const zoneRetour = el("div", { id: "zone-retour" });
   const zoneEssaiConteneur = el("div");
   const suite = el("div.exo__pied", {});
   const rappels = [];
   const majSuite = () => {
-    suite.replaceChildren(
-      s.dernier && s.dernier.statut !== "non-evalue"
-        ? el("button.btn.btn--fort", { type: "button", onclick: () => { Session.suivant(); rafraichir(); } },
-            s.index < s.liste.length - 1 ? "Question suivante →" : "Voir le bilan →")
+    remplacerEnfants(suite,
+      etat.dernier && etat.dernier.statut !== "non-evalue"
+        ? el("button.btn.btn--fort", { type: "button", onclick: () => { ctrl.suivant(); rafraichir(); } },
+            etat.index < etat.liste.length - 1 ? "Question suivante →" : "Voir le bilan →")
         : null,
-      el("button.btn.btn--nu", { type: "button", onclick: () => { Session.quitter(); rafraichir(); } }, "Abandonner la série"));
+      el("button.btn.btn--nu", { type: "button", onclick: () => { ctrl.quitter(); rafraichir(); } }, ctrl.libelleQuitter));
   };
   const afficherRetour = retour => {
-    zoneRetour.replaceChildren(carteRetour(ex, retour, { xp: retour.xp, progres: retour.progres }));
+    const reveler = panneau && etat.indices < panneau.totalIndices ? () => { panneau.reveler(); afficherRetour(retour); } : null;
+    zoneRetour.replaceChildren(carteRetour(ex, retour, { xp: retour.xp, progres: retour.progres, reveler }));
     zoneEssaiConteneur.replaceChildren();
     if (retour.statut !== "non-evalue" && (ex.type === "qcm" || ex.type === "predire")) zoneEssaiConteneur.append(zoneEssai(ex, api));
     if (panneau && retour.reussi) panneau.remove();
@@ -526,22 +622,28 @@ function ecranSerie(rafraichir) {
     brouillon: null, surBrouillon() {}, reponsePrecedente: null,
     surRetour: fn => rappels.push(fn),
     repondre(r) {
-      const retour = Session.repondre(r);
+      const retour = ctrl.repondre(r);
       rappels.forEach(fn => fn(retour));
       afficherRetour(retour);
       return retour;
     }
   };
   const bloc = TYPES_EXERCICE[ex.type].rendre(ex, api);
-  let panneau = s.dernier ? null : panneauIndices(ex, s);
-  if (s.dernier) afficherRetour(s.dernier); else majSuite();
+  let panneau = etat.dernier ? null : panneauIndices(ex, etat);
+  if (etat.dernier) afficherRetour(etat.dernier); else majSuite();
 
   return el("div", {},
-    el("div.serie", {}, el("div.serie__cellules", {}, cellules(Math.round(100 * s.index / s.liste.length))), el("div.serie__compte", {}, `${s.index + 1} / ${s.liste.length}`)),
+    el("div.serie", {}, el("div.serie__cellules", {}, cellules(Math.round(100 * etat.index / etat.liste.length))), el("div.serie__compte", {}, `${etat.index + 1} / ${etat.liste.length}`)),
     el("header.entete", {}, el("h1", {}, ex.titre)),
     el("div.exo__question", {}, ex.question),
     ex.consigne ? el("div.exo__consigne", {}, ex.consigne) : null,
     bloc, panneau, zoneRetour, zoneEssaiConteneur, suite);
+}
+
+function ecranSerie(rafraichir) {
+  const s = Session.courante;
+  if (s.etat === "bilan") return ecranBilan(rafraichir);
+  return rendreQuestion(s, { repondre: r => Session.repondre(r), suivant: Session.suivant, quitter: Session.quitter, libelleQuitter: "Abandonner la série" }, rafraichir);
 }
 
 function ecranBilan(rafraichir) {
@@ -676,19 +778,131 @@ Vues.reglages = () => {
     el("p.tres-muet", { style: "font-size:12px;margin-top:24px" }, `Requêt'R ${CONFIG.version} · ${CONTENU.exercices.length} exercice(s) · ${CONTENU.missions.length} mission(s)`));
 };
 
-Vues.lecons = () => el("div.vue", {},
-  el("header.entete", {}, el("div.entete__sur", {}, "Leçons"), el("h1", {}, "Leçons")),
-  CHAPITRES.length
-    ? el("div.pile", {}, CHAPITRES.map(ch => el("div.chapitre", {}, ch.titre)))
-    : el("div.vide", {}, el("div.vide__boite", {},
-        el("h3", {}, "Aucune leçon pour l'instant"),
-        el("p", {}, "Les leçons guidées (une leçon, puis des exercices) arrivent avec le contenu, à partir du lot 6."))));
+/** Sommaire des chapitres (D047/D050), sur le modèle de Classe'R : chapitres terminés, chapitre conseillé, puis
+ *  la liste complète avec son avancement. Inerte jusqu'au lot 6 ; câblé avec l'arrivée du contenu. */
+function ecranListeChapitres(rafraichir) {
+  const faits = CHAPITRES.filter(Parcours.termine).length;
+  const conseille = Parcours.suivantConseille();
+  return el("div", {},
+    el("header.entete", {}, el("div.entete__sur", {}, "Parcours guidé"), el("h1", {}, "Leçons"),
+      el("p", {}, "Chaque chapitre présente une notion, puis les exercices qui l'appliquent. Les réussites comptent pour votre progression, comme partout ailleurs.")),
+    CHAPITRES.length ? el("div.carte", {},
+      el("div.bilan__ligne", {}, el("span", {}, "Chapitres terminés"), el("span.mono", {}, `${faits} sur ${CHAPITRES.length}`)),
+      el("div", { style: "margin-top:10px" }, cellules(faits / CHAPITRES.length * 100, CHAPITRES.length)),
+      conseille
+        ? el("button.btn.btn--fort", { type: "button", style: "margin-top:16px", onclick: () => { Parcours.ouvrir(conseille.id); rafraichir(); } },
+            faits ? `Reprendre : ${conseille.titre}` : `Commencer : ${conseille.titre}`)
+        : el("p.muet", { style: "font-size:13.5px;margin-top:12px" }, "Tous les chapitres sont terminés. Les exercices et les missions vous attendent pour approfondir.")) : null,
+    CHAPITRES.length
+      ? el("div.pile", { style: "margin-top:16px" }, CHAPITRES.map((ch, i) => {
+          const a = Parcours.avancement(ch), fini = a.total > 0 && a.faits === a.total;
+          return el("button.carte.chapitre" + (fini ? ".chapitre--fini" : ""), { type: "button", onclick: () => { Parcours.ouvrir(ch.id); rafraichir(); } },
+            el("div.chapitre__tete", {},
+              el("span.chapitre__num", {}, Illus.vignette(i), String(i + 1).padStart(2, "0")),
+              el("div", { style: "flex:1" }, el("h3", {}, ch.titre), el("p.chapitre__resume", {}, ch.resume)),
+              fini ? el("span.chapitre__coche", {}, "✓") : null),
+            el("div.chapitre__pied", {},
+              el("span.tres-muet", {}, `${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""} · ${ch.duree}`),
+              el("span.tres-muet.mono", {}, `${a.faits}/${a.total}`)));
+        }))
+      : el("div.vide", {}, el("div.vide__boite", {},
+          el("h3", {}, "Aucune leçon pour l'instant"),
+          el("p", {}, "Les leçons guidées (une leçon, puis des exercices) arrivent avec le contenu, à partir du lot 6."))));
+}
 
-Vues.fiche = () => el("div.vue", {},
-  el("header.entete", {}, el("h1", {}, "Fiches SQL")),
-  el("div.vide", {}, el("div.vide__boite", {},
-    el("h3", {}, "Aucune fiche pour l'instant"),
-    el("p", {}, "Une fiche par clause (JOIN, GROUP BY, CTE, fonctions de fenêtre…) arrivera avec le lexique SQL complet."))));
+/** Écran de leçon : intro, points à retenir, un exemple qu'on peut exécuter pour de vrai (« tester cet exemple »,
+ *  D050), une astuce, puis le bouton qui lance les exercices du chapitre. */
+function ecranLecon(ch, rafraichir) {
+  const l = ch.lecon;
+  const zoneTest = el("div.resultat", { "aria-live": "polite" });
+  return el("div", {},
+    el("header.entete", {}, el("div.entete__sur", {}, `Palier ${ch.niveau}`), el("h1", {}, ch.titre)),
+    el("div.lecon", {},
+      el("p.lecon__intro", {}, l.intro),
+      el("ul.lecon__points", {}, l.points.map(pt => el("li", {}, pt))),
+      el("div.lecon__exemple", {},
+        el("div.lecon__label", {}, l.exemple.titre),
+        el("div.lecon__code", {}, l.exemple.code),
+        el("div.lecon__fleche", {}, "▼"),
+        el("div.lecon__resultat", {}, l.exemple.resultat),
+        l.exemple.commentaire ? el("p.lecon__commentaire", {}, l.exemple.commentaire) : null,
+        el("button.btn.btn--nu", { type: "button", style: "margin-top:10px",
+          onclick: () => zoneTest.replaceChildren(...blocsExecution(Moteur.executer(l.exemple.code))) }, "Tester cet exemple"),
+        zoneTest),
+      l.astuce ? el("div.lecon__astuce", {}, el("b", {}, "Astuce. "), l.astuce) : null),
+    el("div", { style: "margin-top:20px" },
+      el("button.btn.btn--fort", { type: "button", onclick: () => { Parcours.commencer(); rafraichir(); } },
+        ch.exercices.length ? `À vous — ${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""}` : "Aucun exercice pour l'instant")));
+}
+
+/** Bilan de fin de chapitre, sur le modèle de Classe'R (bilanChapitre) : plus sobre que le bilan de série libre
+ *  (pas de détail par compétence ni de certifications ici, déjà annoncées en cours de route par un Toast). */
+function ecranLeconBilan(rafraichir) {
+  const p = Parcours.courant, ch = p.ch;
+  const suivant = CHAPITRES[CHAPITRES.indexOf(ch) + 1] || null;
+  const retenirUniques = [...new Set(p.liste.map(e => e.retenir).filter(Boolean))];
+  return el("div", {},
+    el("header.entete", {}, el("div.entete__sur", {}, "Chapitre terminé"), el("h1", {}, ch.titre),
+      el("p", {}, `${p.reussites} bonne(s) réponse(s) sur ${p.liste.length}.`)),
+    retenirUniques.length ? el("div.carte", {},
+      el("div.lecon__label", {}, "Ce qu'il faut retenir"),
+      el("ul.lecon__points", {}, retenirUniques.map(x => el("li", {}, x)))) : null,
+    el("div", { style: "margin-top:20px;display:flex;gap:10px;flex-wrap:wrap" },
+      suivant ? el("button.btn.btn--fort", { type: "button", onclick: () => { Parcours.ouvrir(suivant.id); rafraichir(); } }, `Chapitre suivant : ${suivant.titre}`) : null,
+      el("button.btn", { type: "button", onclick: () => { Parcours.quitter(); rafraichir(); } }, "Retour au sommaire"),
+      el("a.btn.btn--nu", { href: "#/accueil" }, "Accueil")));
+}
+
+Vues.lecons = () => {
+  const v = el("div.vue");
+  const zone = el("div");
+  const rafraichir = () => {
+    const p = Parcours.courant;
+    zone.replaceChildren(
+      !p ? ecranListeChapitres(rafraichir)
+      : p.etape === "lecon" ? ecranLecon(p.ch, rafraichir)
+      : p.etape === "exercices"
+        ? rendreQuestion(p, { repondre: r => Parcours.repondre(r), suivant: Parcours.suivant, quitter: Parcours.quitter, libelleQuitter: "Quitter le chapitre" }, rafraichir)
+        : ecranLeconBilan(rafraichir));
+  };
+  rafraichir();
+  v.append(zone);
+  return v;
+};
+
+/** Fiche d'une clause (D055) : à quoi elle sert, quand y penser, comment elle s'écrit, l'erreur fréquente, les
+ *  clauses liées — sur le modèle exact de Classe'R (`Vues.fiche`, `Reference/classer-v2.html:9751`), sans
+ *  l'étape d'entraînement (`entrainements` est posé vide dans FICHES, délibérément, D055). Ouverte depuis le
+ *  Lexique par `#/fiche/<clause>` (identifiant dans le hash, comme `#/exercice/<id>`) : aucun état en mémoire
+ *  n'est nécessaire tant qu'il n'y a pas d'entraînement à reprendre là où on l'a laissé. */
+function pageFiche(nom) {
+  const f = FICHES[nom], c = CLAUSES[nom];
+  if (!f || !c) return el("div.vue", {},
+    el("header.entete", {}, el("h1", {}, "Fiche")),
+    el("div.vide", {}, el("div.vide__boite", {},
+      el("h3", {}, "Aucune fiche pour l'instant"),
+      el("p", {}, nom ? `« ${nom} » n'a pas encore sa fiche détaillée : elle arrivera avec son palier.` : "Ouvrez le lexique et choisissez une clause pour voir sa fiche."),
+      el("button.btn.btn--fort", { type: "button", style: "margin-top:14px", onclick: () => Lexique.ouvrir() }, "Ouvrir le lexique"))));
+
+  const bloc = (label, contenu) => el("div.fiche__bloc", {}, el("div.fiche__label", {}, label), contenu);
+  const boutonLie = n => el("button.btn.btn--nu.mono", { type: "button", style: "font-size:12.5px;padding:5px 10px",
+    onclick: () => FICHES[n] ? Routeur.aller(`/fiche/${encodeURIComponent(n)}`) : Toast.afficher(`Fiche détaillée pas encore disponible pour ${n}.`) },
+    n + (FICHES[n] ? "" : " ·"));
+  return el("div.vue", {},
+    el("div.section__titre", { style: "margin-bottom:14px" },
+      el("h1.mono", { style: "font-size:22px;color:var(--accent-fort)" }, nom),
+      el("button.btn.btn--nu", { type: "button", onclick: () => Lexique.ouvrir() }, "Autre clause")),
+    el("div.carte", {},
+      bloc("À quoi ça sert", el("p.fiche__texte", {}, f.but)),
+      bloc("Quand on y pense", el("p.fiche__texte", {}, f.contexte)),
+      bloc("Comment ça s'écrit", el("div.fiche__syntaxe", {}, c.syntaxe)),
+      bloc("Erreur fréquente", el("p.fiche__texte", {}, f.erreur)),
+      f.voirAussi && f.voirAussi.length
+        ? bloc("Voir aussi", el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, f.voirAussi.map(boutonLie)))
+        : null));
+}
+
+Vues.fiche = () => pageFiche(null);
 
 function listeMissions(rafraichir) {
   return el("div", {},
@@ -773,7 +987,8 @@ function pageExercice(ex) {
     pied.replaceChildren(el("a.btn", { href: "#/exercices" }, "← Tous les exercices"), ...(boutonSuivant ? [boutonSuivant] : []));
   };
   const afficherRetour = retour => {
-    zoneRetour.replaceChildren(carteRetour(ex, retour, { xp: retour.xp, progres: retour.progres }));
+    const reveler = panneau && e.indices < panneau.totalIndices ? () => { panneau.reveler(); afficherRetour(retour); } : null;
+    zoneRetour.replaceChildren(carteRetour(ex, retour, { xp: retour.xp, progres: retour.progres, reveler }));
     zoneEssaiConteneur.replaceChildren();
     if (retour.statut !== "non-evalue" && (ex.type === "qcm" || ex.type === "predire")) zoneEssaiConteneur.append(zoneEssai(ex, api));
     if (retour.reussi && panneau) panneau.remove();
@@ -813,7 +1028,7 @@ function pageExercice(ex) {
   majPied();
 
   return el("div.vue", {},
-    el("header.entete", {}, el("div.entete__sur", {}, "Exercice de démonstration"), el("h1", {}, ex.titre)),
+    el("header.entete", {}, el("div.entete__sur", {}, "Exercice"), el("h1", {}, ex.titre)),
     el("div.exo__meta", {}, el("span.puce", {}, LIBELLE_TYPE[ex.type]),
       ex.niveau ? el("span.puce", {}, ex.niveau) : null,
       ex.competence ? el("span.puce", {}, (CONTENU.competences.find(c => c.id === ex.competence) || {}).nom || ex.competence) : null),
@@ -828,16 +1043,23 @@ function pageExerciceDepuisHash(chemin) {
   return ex ? pageExercice(ex) : Vues.exercices();
 }
 
-/* ── Routeur : table de routes à la Classe'R, plus le cas spécial /exercice/<id> (identifiant dynamique) ───── */
+function pageFicheDepuisHash(chemin) {
+  return pageFiche(decodeURIComponent(chemin.slice("/fiche/".length)));
+}
+
+/* ── Routeur : table de routes à la Classe'R, plus deux cas spéciaux à identifiant dynamique dans le hash :
+   /exercice/<id> et /fiche/<clause>, sur le même motif. ──────────────────────────────────────────────────── */
 const Routeur = (() => {
   const routes = [];
   const PREFIXE_EXERCICE = "/exercice/";
+  const PREFIXE_FICHE = "/fiche/";
 
   function enregistrer(r) { routes.push(r); }
 
   function courante() {
     const h = (location.hash || "").slice(1) || "/accueil";
     if (h.startsWith(PREFIXE_EXERCICE)) return { chemin: h, titre: "Exercice", vue: "__exercice__", nav: false };
+    if (h.startsWith(PREFIXE_FICHE)) return { chemin: h, titre: "Fiche", vue: "__fiche__", nav: false };
     return routes.find(r => r.chemin === h) || routes.find(r => r.chemin === "/accueil");
   }
 
@@ -846,7 +1068,9 @@ const Routeur = (() => {
     document.title = `${route.titre} — Requêt'R`;
     let page;
     try {
-      page = route.vue === "__exercice__" ? pageExerciceDepuisHash(route.chemin) : Vues[route.vue]();
+      page = route.vue === "__exercice__" ? pageExerciceDepuisHash(route.chemin)
+        : route.vue === "__fiche__" ? pageFicheDepuisHash(route.chemin)
+        : Vues[route.vue]();
     } catch (err) {
       console.error(err);
       page = el("div.erreur-sql", { role: "alert" }, el("b", {}, "Cet écran n'a pas pu s'afficher"), el("pre", {}, String(err && err.message || err)));
@@ -857,6 +1081,7 @@ const Routeur = (() => {
       if (a.dataset.route === route.chemin) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
     Explorateur.majBouton();
+    Lexique.majBouton();
     window.scrollTo(0, 0);
     zone.focus({ preventScroll: true });
   }
@@ -870,7 +1095,7 @@ const Routeur = (() => {
       el("a.rail__lien", { href: "#" + r.chemin, "data-route": r.chemin }, icone(r.icone), el("span", {}, r.court || r.titre)));
     return el("aside.rail", {},
       el("div.rail__marque", {}, el("div.logo", {}, "R"), el("div.rail__nom", {}, "Requêt'R")),
-      el("nav.rail__nav", { "aria-label": "Navigation principale" }, liens, el("div.rail__sep"), Explorateur.bouton()),
+      el("nav.rail__nav", { "aria-label": "Navigation principale" }, liens, el("div.rail__sep"), Explorateur.bouton(), Lexique.bouton()),
       el("div.rail__bas", {}, el("div.tres-muet", { style: "font-size:11.5px" }, "Apprendre le SQL en pratiquant")));
   }
 
@@ -898,7 +1123,11 @@ async function demarrer() {
     el("a.saut", { href: "#", onclick: ev => { ev.preventDefault(); document.getElementById("zone-contenu").focus(); } }, "Aller au contenu"),
     Routeur.construireRail(),
     el("main.principal", {}, el("div.contenu", { id: "zone-contenu", tabindex: "-1" })));
-  document.addEventListener("keydown", ev => { if (ev.key === "Escape" && Explorateur.estOuvert()) Explorateur.fermer(); });
+  document.addEventListener("keydown", ev => {
+    if (ev.key !== "Escape") return;
+    if (Explorateur.estOuvert()) Explorateur.fermer();
+    else if (Lexique.estOuvert()) Lexique.fermer();
+  });
 
   try {
     await Moteur.initialiser();
