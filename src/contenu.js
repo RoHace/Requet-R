@@ -1270,6 +1270,715 @@ const CONTENU = {
       exemple: "La commande 1038 a 4 lignes mais un seul frais de port (6,50 €) : si on le comptait une fois par ligne, on obtiendrait 26,00 € de frais de port au lieu de 6,50 €.",
       explication: "Une fois les deux tables reliées (palier 3), chaque commande à plusieurs lignes apparaîtra plusieurs fois dans le résultat joint — une fois par ligne. Additionner frais_port directement sur ce résultat joint compterait alors les frais de port de cette commande une fois PAR LIGNE, au lieu d'une fois par commande : exactement le piège que SCHEMA.md signale (12 911,50 € au lieu de 12 619,00 € sur l'ensemble de la boutique). Il faudra additionner les frais de port à part, une fois par commande, avant de les ajouter au total des produits.",
       retenir: "Relier deux tables où l'une a plusieurs lignes pour une de l'autre (ici, plusieurs lignes de commande pour une commande) répète cette ligne unique autant de fois qu'il y a de lignes liées : une colonne de la table « une seule ligne » comptée directement sur ce résultat joint sera gonflée d'autant."
+    },
+
+    /* ── Palier 3 (lot 8) : JOIN, LEFT JOIN, anti-jointure, auto-jointure, trois tables ──────────────────── */
+    {
+      id: "p3-01", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 1,
+      titre: "Ce qu'une commande ne contient pas",
+      question: "Dans l'explorateur, la table commandes a bien une colonne client_id, mais aucune colonne qui porte le nom du client. Pourquoi ?",
+      options: [
+        "Le nom n'est écrit qu'une fois, dans clients ; client_id dit de quelle ligne de clients il s'agit",
+        "Le nom du client a été oublié quand la table commandes a été créée",
+        "SQLite interdit de stocker du texte dans une table qui contient déjà des dates",
+        "Le nom est recopié dans commandes, mais l'explorateur ne l'affiche pas"
+      ],
+      reponse: 0,
+      piste: "Que faudrait-il corriger, et à combien d'endroits, si un client changeait de nom ?",
+      clause: "JOIN",
+      exemple: "La commande 1001 porte client_id = 201 : le nom correspondant se lit dans la table clients, à la ligne dont l'id vaut 201.",
+      explication: "C'est le rôle d'une clé étrangère : client_id contient l'identifiant d'une ligne de clients, et rien d'autre. Le nom n'est donc écrit qu'à un seul endroit — si un client change de nom, une seule ligne est à corriger, et les 70 commandes suivent. Le prix à payer est qu'aucune des deux tables ne répond seule à « le nom du client et la date de sa commande » : il faut les relier, et c'est ce que fait une jointure.",
+      retenir: "Une clé étrangère remplace la copie d'une information : le nom n'existe qu'une fois, dans sa table, et les autres tables s'y réfèrent par un identifiant. Relier les deux au moment de lire, c'est le travail d'une jointure."
+    },
+    {
+      id: "p3-02", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Relier sans dédoubler",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ? (la table commandes en compte 70, la table clients 40)",
+      requete: "SELECT c.nom, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id;",
+      predit: "nbLignes",
+      piste: "Chaque commande a exactement un client. Combien de lignes de clients viennent donc se coller à une ligne de commandes ?",
+      clause: "JOIN",
+      exemple: "La carte des relations de l'explorateur se lit ici « N commandes pour 1 client » : c'est le côté « N » qui donne le nombre de lignes du résultat.",
+      explication: "Chaque commande pointe vers exactement un client, jamais zéro ni deux : la jointure retrouve donc une seule ligne de clients pour chacune des 70 commandes, et le résultat en compte 70. Les 40 lignes de clients n'ajoutent rien au compte — elles apportent des COLONNES (le nom), pas des lignes. Les 6 clients qui n'ont jamais commandé, eux, n'apparaissent nulle part dans ce résultat : aucune commande ne les réclame.",
+      retenir: "Joindre une table à celle qu'elle pointe (une commande → son client) ne change pas le nombre de lignes : on gagne des colonnes, pas des lignes."
+    },
+    {
+      id: "p3-03", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Le nom du client sur chaque commande",
+      question: "Pour chaque commande, affichez le nom du client qui l'a passée et la date de cette commande.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client, puis la date de la commande. Une ligne par commande.",
+      solution: "SELECT c.nom, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id",
+      comparer: {},
+      piste: "FROM commandes o JOIN clients c ON c.id = o.client_id : le ON dit quelle colonne de l'une correspond à quelle colonne de l'autre.",
+      clause: "JOIN",
+      exemple: "SELECT p.nom, l.quantite FROM lignes_commande l JOIN produits p ON p.id = l.produit_id; relie de la même façon chaque ligne de commande au produit qu'elle désigne.",
+      explication: "FROM commandes o JOIN clients c ON c.id = o.client_id lit les deux tables ensemble : pour chaque commande, SQLite va chercher la ligne de clients dont l'id vaut le client_id de cette commande. Les lettres o et c sont des alias : elles évitent de réécrire le nom entier des tables, et rendent lisible de quelle table vient chaque colonne. Le résultat compte 70 lignes, une par commande.",
+      retenir: "Une jointure s'écrit FROM table1 JOIN table2 ON correspondance. Préfixer les colonnes par l'alias de leur table (c.nom, o.date_commande) évite toute ambiguïté dès que deux tables ont des colonnes du même nom."
+    },
+    {
+      id: "p3-04", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Deux tables côte à côte, mais rien de relié",
+      question: "Pour chaque commande, affichez le nom du client et la date de la commande.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client, puis la date de la commande. Une ligne par commande.",
+      depart: "SELECT c.nom, o.date_commande FROM commandes o, clients c",
+      solution: "SELECT c.nom, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id",
+      comparer: {},
+      piste: "Cette requête ne dit nulle part quel client correspond à quelle commande : que peut faire SQLite d'autre que de les essayer tous ?",
+      clause: "ON",
+      exemple: "SELECT COUNT(*) FROM commandes, clients; renvoie 2 800 : 70 × 40, toutes les combinaisons possibles.",
+      explication: "Lister deux tables séparées par une virgule, sans condition de correspondance, associe CHAQUE commande à CHAQUE client : 70 × 40 = 2 800 lignes, dont 2 730 n'ont aucun sens — la commande d'un client y est affichée au nom de quelqu'un d'autre. Rien ne signale l'erreur : la requête s'exécute et renvoie un tableau d'apparence normale. C'est le ON qui manque, et lui seul : il réduit ces 2 800 combinaisons aux 70 qui sont vraies.",
+      retenir: "Sans condition de correspondance, deux tables produisent toutes leurs combinaisons. Une jointure sans ON n'est pas une erreur de syntaxe mais une erreur de sens, bien plus difficile à repérer."
+    },
+    {
+      id: "p3-05", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Chaque ligne avec chaque ligne",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (commandes : 70 lignes ; clients : 40 lignes)",
+      requete: "SELECT COUNT(*) FROM commandes, clients;",
+      predit: "valeur",
+      piste: "Aucune correspondance n'est demandée : chaque ligne de la première table est associée à chacune des lignes de la seconde.",
+      clause: "ON",
+      exemple: "Deux tables de 3 et 4 lignes, listées sans condition, donneraient 12 lignes : 3 × 4.",
+      explication: "Sans ON, SQLite forme toutes les paires possibles : la première commande avec chacun des 40 clients, puis la deuxième avec chacun des 40, et ainsi de suite. Cela fait 70 × 40 = 2 800 lignes. Ce nombre est le signe le plus reconnaissable de l'erreur : un résultat bien plus gros que n'importe laquelle des deux tables, et dont la taille est exactement leur produit.",
+      retenir: "Deux tables lues sans condition de correspondance renvoient autant de lignes que le PRODUIT de leurs tailles. Un résultat anormalement gros est presque toujours une jointure dont le ON manque."
+    },
+    {
+      id: "p3-06", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "L'identifiant de qui ?",
+      question: "Pour chaque commande, affichez l'identifiant du CLIENT et la date de la commande.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant du client, puis la date de la commande.",
+      depart: "SELECT o.id, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id",
+      solution: "SELECT c.id, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id",
+      comparer: {},
+      piste: "Les deux tables ont une colonne id. Le préfixe (c. ou o.) décide de laquelle on parle.",
+      clause: "JOIN",
+      exemple: "Dans une jointure entre produits p et lignes_commande l, p.id est l'identifiant du produit et l.id celui de la ligne de commande : deux colonnes différentes, du même nom.",
+      explication: "La jointure est juste, la colonne ne l'est pas : o.id est l'identifiant de la COMMANDE (1001, 1002…), pas celui du client (201, 202…). Les deux colonnes s'appellent id, s'affichent sous le même titre et contiennent des nombres : rien ne distingue le bon résultat du mauvais, sinon les valeurs elles-mêmes. Écrire c.id répond à la question posée.",
+      retenir: "Après une jointure, le nom d'une colonne ne suffit plus à l'identifier : seul son préfixe de table dit de laquelle il s'agit. Deux colonnes id dans un résultat n'ont aucune raison de se ressembler."
+    },
+    {
+      id: "p3-07", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Une ligne par ligne de produit",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ? (commandes : 70 lignes ; lignes_commande : 142 lignes)",
+      requete: "SELECT o.id, l.produit_id, l.quantite FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id;",
+      predit: "nbLignes",
+      pieges: ["P4"],
+      piste: "Chaque ligne de lignes_commande appartient à une seule commande — mais une commande peut en avoir plusieurs.",
+      clause: "JOIN",
+      exemple: "La commande 1038 a 4 lignes de produits : à elle seule, elle occupe 4 lignes du résultat, ses colonnes (date, statut, frais de port) étant recopiées à l'identique sur chacune.",
+      explication: "Chaque ligne de lignes_commande retrouve une seule commande, donc chacune des 142 produit exactement une ligne de résultat : 142. C'est l'inverse de la jointure précédente, et pour la même raison — le compte vient toujours du côté « plusieurs ». Ici, chaque commande à plusieurs lignes est répétée autant de fois qu'elle a de produits ; les 70 commandes sont bien toutes présentes, mais elles occupent 142 lignes.",
+      retenir: "En joignant une table à celle qui la pointe (une commande ← ses lignes de produits), le résultat prend le nombre de lignes du côté « plusieurs ». Une commande à 4 lignes y apparaît 4 fois."
+    },
+    {
+      id: "p3-08", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Ce que deviennent les commandes à plusieurs lignes",
+      question: "La jointure entre commandes (70 lignes) et lignes_commande (142 lignes) renvoie 142 lignes. Qu'est-il arrivé à une commande qui compte 4 lignes de produits ?",
+      options: [
+        "Elle occupe 4 lignes du résultat, ses propres colonnes étant répétées à l'identique sur chacune",
+        "Seule sa première ligne de produit a été gardée",
+        "Ses 4 lignes ont été fusionnées en une seule, les quantités additionnées",
+        "Elle a été écartée : le résultat ne garde que les commandes à une seule ligne"
+      ],
+      reponse: 0,
+      pieges: ["P4"],
+      piste: "Une jointure n'additionne ni ne résume rien : elle met côte à côte des lignes qui se correspondent.",
+      clause: "JOIN",
+      exemple: "Pour la commande 1038 (4 lignes), sa date et ses frais de port apparaissent 4 fois dans le résultat, une fois par produit commandé.",
+      explication: "Une jointure ne fait que rapprocher des lignes : elle ne regroupe pas, ne résume pas, n'additionne rien. Une commande qui a 4 lignes de produits se retrouve donc recopiée 4 fois, avec sa date, son statut et ses frais de port identiques sur chacune. Tant qu'on se contente de lire, cette répétition est inoffensive et même attendue. Elle devient un piège dès qu'on additionne : c'est l'objet du chapitre suivant.",
+      retenir: "Une jointure rapproche, elle ne résume pas. La répétition des colonnes du côté « une seule ligne » est normale — et c'est elle qui fausse tout total calculé ensuite sur ces colonnes."
+    },
+    {
+      id: "p3-09", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le détail d'une commande, avec le nom des produits",
+      question: "Affichez le détail de la commande 1038 : le nom du produit et la quantité, pour chacune de ses lignes.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du produit, puis la quantité. Une ligne par ligne de la commande 1038.",
+      solution: "SELECT p.nom, l.quantite FROM lignes_commande l JOIN produits p ON p.id = l.produit_id WHERE l.commande_id = 1038",
+      comparer: {},
+      piste: "La table lignes_commande ne contient que produit_id : le nom se lit dans produits, à la ligne dont l'id vaut ce produit_id.",
+      clause: "JOIN",
+      exemple: "SELECT c.nom, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id WHERE o.statut = 'livree'; filtre de la même façon, après avoir relié les deux tables.",
+      explication: "La jointure relie chaque ligne de commande au produit qu'elle désigne, et le WHERE ne garde que les lignes de la commande 1038 : 4 lignes. Le WHERE porte ici sur lignes_commande, mais il aurait pu porter sur produits — une fois les tables reliées, les colonnes des deux sont disponibles pour filtrer comme pour afficher.",
+      retenir: "Une fois deux tables jointes, WHERE filtre le résultat de la jointure : il peut porter indifféremment sur une colonne de l'une ou de l'autre."
+    },
+    {
+      id: "p3-10", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Des frais de port qui doublent",
+      question: "Quel est le total des frais de port de toutes les commandes de la boutique ?",
+      consigne: "Une seule valeur : la somme des frais de port, chaque commande comptant une seule fois.",
+      depart: "SELECT SUM(o.frais_port) FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id",
+      solution: "SELECT SUM(frais_port) FROM commandes",
+      comparer: {},
+      pieges: ["P4"],
+      piste: "Après la jointure, une commande à plusieurs lignes apparaît plusieurs fois — et ses frais de port avec elle. La question porte-t-elle sur les lignes de produits ?",
+      clause: "SUM",
+      exemple: "La commande 1038 a 4 lignes et 6,50 € de frais de port : après la jointure, ces 6,50 € sont comptés 4 fois, soit 26,00 €.",
+      explication: "La requête de départ additionne frais_port sur les 142 lignes du résultat joint, au lieu des 70 commandes : chaque commande à plusieurs lignes y voit ses frais comptés autant de fois qu'elle a de produits. Le total passe ainsi de 306,50 € à 636,00 € — plus du double, sans la moindre erreur affichée. La correction n'est pas d'ajuster le calcul mais de retirer la jointure : la question ne porte que sur commandes, aucune autre table n'a à intervenir.",
+      retenir: "Ne joignez que les tables dont la question a besoin. Additionner une colonne de la table « une seule ligne » après une jointure la compte une fois par ligne liée, et gonfle le total sans rien signaler."
+    },
+    {
+      id: "p3-11", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Dans quel sens se trompe-t-on ?",
+      question: "Un total calculé sur une colonne de commandes APRÈS une jointure avec lignes_commande est faux. Dans quel sens, et pourquoi ?",
+      options: [
+        "Trop grand : la valeur de chaque commande est comptée autant de fois qu'elle a de lignes de produits",
+        "Trop petit : seules les commandes à une seule ligne de produit sont comptées",
+        "Trop grand ou trop petit, selon l'ordre dans lequel les deux tables sont écrites",
+        "Juste, mais arrondi différemment parce que le résultat contient plus de lignes"
+      ],
+      reponse: 0,
+      pieges: ["P4"],
+      piste: "Une commande à une seule ligne de produit est comptée une fois, une commande à quatre lignes l'est quatre fois : le total peut-il être trop petit ?",
+      clause: "SUM",
+      exemple: "Sur la boutique entière, le total des frais de port passe de 306,50 € à 636,00 € une fois la jointure posée.",
+      explication: "Chaque commande est comptée autant de fois qu'elle a de lignes liées — soit une fois au minimum. Aucune ne peut donc être sous-comptée, et toute commande à plusieurs lignes est sur-comptée : le total est toujours trop grand, jamais trop petit. L'ordre des tables dans le FROM n'y change rien, une jointure est symétrique. Et l'écart n'a rien d'un arrondi : il se chiffre ici à plus du double.",
+      retenir: "Le gonflement par jointure ne va que dans un sens : vers le haut. Un total qui augmente après l'ajout d'une jointure n'est jamais une coïncidence."
+    },
+    {
+      id: "p3-12", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Combien de commandes, vraiment ?",
+      question: "Dans le résultat qui relie commandes et lignes_commande, combien de commandes DIFFÉRENTES apparaissent ?",
+      consigne: "Une seule valeur : le nombre de commandes différentes présentes dans ce résultat. La jointure doit figurer dans votre requête.",
+      solution: "SELECT COUNT(DISTINCT o.id) FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id",
+      comparer: {},
+      pieges: ["P4"],
+      piste: "COUNT(*) compterait les 142 lignes du résultat. Ce qu'on veut, c'est le nombre d'identifiants de commande DIFFÉRENTS.",
+      clause: "COUNT",
+      exemple: "SELECT COUNT(DISTINCT produit_id) FROM lignes_commande; compte les produits différents qui ont été commandés, pas les lignes de commande.",
+      explication: "COUNT(*) renvoie ici 142 : le nombre de lignes du résultat joint, où les commandes à plusieurs produits sont répétées. COUNT(DISTINCT o.id) ne compte chaque identifiant de commande qu'une fois, et renvoie 70 — le nombre réel de commandes concernées. C'est le même piège que le total gonflé, sur un compte plutôt que sur une somme, et DISTINCT est l'outil qui le neutralise quand la jointure, elle, est nécessaire.",
+      retenir: "Après une jointure, COUNT(*) compte des lignes de résultat, pas des objets du monde réel. Pour compter des commandes, des clients ou des produits, c'est COUNT(DISTINCT identifiant) qu'il faut."
+    },
+    {
+      id: "p3-13", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Tout le monde, même sans commande",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (la table clients compte 40 lignes)",
+      requete: "SELECT COUNT(DISTINCT c.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id;",
+      predit: "valeur",
+      pieges: ["P1"],
+      piste: "LEFT JOIN garde toutes les lignes de la table de GAUCHE, celle écrite avant lui. Laquelle est-ce ici ?",
+      clause: "LEFT JOIN",
+      exemple: "FROM clients c LEFT JOIN commandes o : clients est à gauche, donc aucun client ne peut disparaître du résultat.",
+      explication: "LEFT JOIN garde chaque ligne de la table de gauche, qu'elle ait ou non une correspondance à droite : les 40 clients sont donc tous présents, et COUNT(DISTINCT c.id) en compte 40. Un client qui a commandé plusieurs fois occupe plusieurs lignes, mais DISTINCT ne le compte qu'une ; un client sans aucune commande occupe une ligne où toutes les colonnes de commandes valent NULL, et il compte lui aussi pour un.",
+      retenir: "LEFT JOIN garantit que la table de gauche est intégralement conservée : son nombre de lignes distinctes ne peut pas diminuer, quoi qu'il y ait à droite."
+    },
+    {
+      id: "p3-14", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Chaque client, avec ses commandes s'il en a",
+      question: "Affichez le nom de chaque client et l'identifiant de ses commandes, en gardant aussi les clients qui n'ont jamais commandé.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client, puis l'identifiant de la commande. Les clients sans commande doivent apparaître, avec un identifiant vide.",
+      solution: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id",
+      comparer: {},
+      pieges: ["P1"],
+      piste: "Une jointure ordinaire écarterait les clients sans correspondance. Laquelle les garde ?",
+      clause: "LEFT JOIN",
+      exemple: "SELECT p.nom, l.quantite FROM produits p LEFT JOIN lignes_commande l ON l.produit_id = p.id; garde de même les produits jamais commandés.",
+      explication: "Le résultat compte 76 lignes : les 70 commandes, chacune à côté du nom de son client, plus 6 lignes pour les clients qui n'ont jamais commandé — avec un identifiant de commande vide. Une jointure ordinaire n'en aurait renvoyé que 70, et ces 6 clients auraient disparu sans que rien ne le signale. L'ordre des tables compte : c'est clients, écrite à gauche, qui est intégralement conservée.",
+      retenir: "LEFT JOIN sert dès que la question inclut les cas vides : « tous les clients, même ceux qui… ». La table à conserver s'écrit à gauche."
+    },
+    {
+      id: "p3-15", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Ce qu'il y a dans les colonnes de droite",
+      question: "Dans un LEFT JOIN, que contiennent les colonnes de la table de DROITE, sur une ligne de gauche qui n'a aucune correspondance ?",
+      options: [
+        "NULL : la ligne de gauche est gardée, et les colonnes de droite restent vides",
+        "Zéro pour les colonnes numériques, et un texte vide pour les autres",
+        "Les valeurs de la ligne précédente du résultat",
+        "Rien du tout : cette ligne n'apparaît pas dans le résultat"
+      ],
+      reponse: 0,
+      pieges: ["P1", "P3"],
+      piste: "Que vaut une information qui n'existe pas ? C'est le même mot que pour une ville non renseignée.",
+      clause: "LEFT JOIN",
+      exemple: "Pour un client sans commande, o.id, o.date_commande et o.statut valent tous NULL sur la ligne qui lui correspond.",
+      explication: "La ligne existe bel et bien dans le résultat — c'est tout l'intérêt du LEFT JOIN — mais il n'y a rien à mettre dans les colonnes de droite : elles valent NULL, l'absence de valeur déjà rencontrée au palier 2. Ce n'est ni zéro ni un texte vide, et la distinction est décisive : c'est ce NULL qui permet, juste après, de retrouver précisément les lignes sans correspondance, et c'est lui aussi qui piège COUNT(*) et les conditions écrites dans un WHERE.",
+      retenir: "Une ligne sans correspondance est conservée avec toutes les colonnes de droite à NULL. Ce NULL est la trace de l'absence — et le moyen de la retrouver."
+    },
+    {
+      id: "p3-16", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Les clients qui n'ont jamais commandé",
+      question: "Quels clients n'ont jamais passé la moindre commande ?",
+      consigne: "Une colonne : le nom de ces clients. Une ligne par client concerné.",
+      solution: "SELECT c.nom FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE o.id IS NULL",
+      comparer: {},
+      pieges: ["P1"],
+      piste: "Gardez d'abord tous les clients avec un LEFT JOIN, puis ne conservez que ceux dont la commande est restée vide.",
+      clause: "IS NULL",
+      exemple: "SELECT p.nom FROM produits p LEFT JOIN lignes_commande l ON l.produit_id = p.id WHERE l.produit_id IS NULL; retrouve de la même façon les produits jamais commandés.",
+      explication: "C'est une anti-jointure : on relie les deux tables en gardant tout à gauche, puis on ne retient QUE les lignes où la droite est restée vide. Le WHERE o.id IS NULL ne parle donc pas d'un identifiant manquant dans la base — il désigne les lignes pour lesquelles la jointure n'a rien trouvé. Six clients répondent à la question. Retenez ce nombre : le prochain exercice en dépend.",
+      retenir: "Chercher ce qui n'existe pas s'écrit en deux temps : LEFT JOIN pour tout garder, puis WHERE colonne_de_droite IS NULL pour ne retenir que les absences."
+    },
+    {
+      id: "p3-17", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Ceux qui restent",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (la table clients compte 40 lignes, et l'exercice précédent a établi que 6 d'entre eux n'ont jamais commandé)",
+      requete: "SELECT COUNT(DISTINCT c.id) FROM clients c JOIN commandes o ON o.client_id = c.id;",
+      predit: "valeur",
+      pieges: ["P1"],
+      piste: "Une jointure ordinaire ne garde que les lignes qui ont une correspondance des DEUX côtés. Qui perd sa place ?",
+      clause: "JOIN",
+      exemple: "Le même calcul avec LEFT JOIN renvoie 40 : c'est le seul mot qui change entre les deux requêtes, et il vaut 6 clients.",
+      explication: "Une jointure ordinaire écarte toute ligne de gauche sans correspondance à droite : les 6 clients sans commande disparaissent, et il reste 40 − 6 = 34 clients distincts. Le résultat ne contient aucun signe de cette disparition — ni message, ni ligne vide. C'est la différence la plus importante du palier : le même calcul, sur la même base, renvoie 34 ou 40 selon un seul mot.",
+      retenir: "JOIN et LEFT JOIN ne comptent pas la même population : la jointure ordinaire perd silencieusement les lignes sans correspondance. Choisir entre les deux, c'est répondre à « les cas vides font-ils partie de la question ? »."
+    },
+    {
+      id: "p3-18", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Six clients ont disparu",
+      question: "Pour chaque client, affichez son nom et l'identifiant de ses commandes — y compris les clients qui n'en ont aucune.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client, puis l'identifiant de la commande. Les clients sans commande doivent apparaître, avec un identifiant vide.",
+      depart: "SELECT c.nom, o.id FROM clients c JOIN commandes o ON o.client_id = c.id",
+      solution: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id",
+      comparer: {},
+      pieges: ["P1"],
+      piste: "La consigne demande explicitement les clients sans commande. Une jointure ordinaire peut-elle les renvoyer ?",
+      clause: "LEFT JOIN",
+      exemple: "70 lignes avec JOIN, 76 avec LEFT JOIN : les 6 lignes d'écart sont exactement les clients qui n'ont jamais commandé.",
+      explication: "La requête de départ renvoie 70 lignes au lieu de 76, et rien ne dit lesquelles manquent : les 6 clients sans commande sont écartés par la jointure elle-même, avant même qu'on puisse les voir. Un seul mot sépare les deux requêtes. C'est le genre d'erreur qui ne se remarque qu'en recomptant, et qui fausse ensuite tout chiffre tiré de ce résultat — une moyenne par client, par exemple, serait calculée sur 34 clients au lieu de 40.",
+      retenir: "Quand une consigne contient « y compris ceux qui n'ont pas… », la jointure ordinaire est forcément fausse : c'est LEFT JOIN qu'elle demande."
+    },
+    {
+      id: "p3-19", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 3,
+      titre: "Une ligne, même sans commande",
+      question: "Le client 215 n'a jamais passé de commande. Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ?",
+      requete: "SELECT COUNT(*) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE c.id = 215;",
+      predit: "valeur",
+      pieges: ["P1"],
+      piste: "COUNT(*) compte des LIGNES de résultat. Le LEFT JOIN a-t-il produit une ligne pour ce client ?",
+      clause: "COUNT",
+      exemple: "Cette ligne existe avec o.id, o.statut et o.date_commande tous à NULL : elle est vide à droite, mais elle est bien là.",
+      explication: "Le LEFT JOIN garde le client 215 et lui donne une ligne, dont toutes les colonnes de commandes valent NULL. COUNT(*) compte les lignes sans regarder leur contenu : il en trouve une, et renvoie 1. Un client sans aucune commande est donc crédité d'une commande par ce calcul — l'erreur la plus courante après un LEFT JOIN, et elle se propage silencieusement dans toute moyenne ou tout classement fondé dessus.",
+      retenir: "Après un LEFT JOIN, COUNT(*) renvoie 1 et non 0 pour une ligne sans correspondance : la ligne existe, même vide à droite."
+    },
+    {
+      id: "p3-20", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 3,
+      titre: "L'écart entre les deux comptes",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (ce LEFT JOIN produit 76 lignes, pour 70 commandes au total)",
+      requete: "SELECT COUNT(*) - COUNT(o.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id;",
+      predit: "valeur",
+      pieges: ["P1", "P3"],
+      piste: "COUNT(*) compte les 76 lignes du résultat. COUNT(o.id) ne compte que celles où une commande a vraiment été trouvée. Combien de lignes séparent les deux ?",
+      clause: "COUNT",
+      exemple: "La règle vient du palier 2 : COUNT(ville) ignore les clients sans ville. Ici, COUNT(o.id) ignore les lignes où la jointure n'a rien trouvé.",
+      explication: "COUNT(*) compte les 76 lignes du résultat, sans regarder leur contenu. COUNT(o.id) ne compte que les lignes où l'identifiant de commande est renseigné, soit les 70 vraies commandes : les lignes créées par le LEFT JOIN pour les clients sans commande y valent NULL et ne sont pas comptées. L'écart, 76 − 70 = 6, est exactement le nombre de clients qui n'ont jamais commandé. Pour un seul de ces clients pris isolément, le même contraste donnerait 1 et 0.",
+      retenir: "Après un LEFT JOIN, COUNT(*) et COUNT(colonne_de_droite) diffèrent précisément du nombre de lignes sans correspondance. C'est pourquoi un comptage doit toujours porter sur une colonne de la table de droite."
+    },
+    {
+      id: "p3-21", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Zéro commande, ou une ?",
+      question: "Pour chaque client, affichez son nom et son nombre de commandes. Les clients qui n'ont jamais commandé doivent afficher 0.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client, puis son nombre de commandes. Une ligne par client, les 40 clients compris.",
+      depart: "SELECT c.nom, COUNT(*) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id GROUP BY c.id",
+      solution: "SELECT c.nom, COUNT(o.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id GROUP BY c.id",
+      comparer: {},
+      pieges: ["P1", "P3"],
+      piste: "Le LEFT JOIN est juste, le regroupement aussi. Ce qui est compté ne l'est pas : que compte COUNT(*) pour un client sans commande ?",
+      clause: "COUNT",
+      exemple: "Le client 215 n'a aucune commande : COUNT(*) le crédite de 1, COUNT(o.id) renvoie bien 0.",
+      explication: "Les 40 clients sont bien là et le regroupement est correct, mais les 6 clients sans commande affichent 1 au lieu de 0 : COUNT(*) compte la ligne que le LEFT JOIN a créée pour eux, alors qu'elle ne représente aucune commande. COUNT(o.id) ne compte que les commandes réellement trouvées. C'est une erreur particulièrement traître : le tableau a le bon nombre de lignes, les bons noms, et seuls six chiffres sur quarante sont faux.",
+      retenir: "LEFT JOIN et COUNT(*) ne vont jamais ensemble. Dès qu'un comptage suit un LEFT JOIN, comptez une colonne de la table de droite."
+    },
+    {
+      id: "p3-22", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 3,
+      titre: "La condition qui ne chasse personne",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (la table clients compte 40 lignes ; 13 clients n'ont aucune commande livrée)",
+      requete: "SELECT COUNT(DISTINCT c.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id AND o.statut = 'livree';",
+      predit: "valeur",
+      pieges: ["P1"],
+      piste: "La condition sur le statut est écrite dans le ON, pas dans un WHERE : elle décide de ce qui se RELIE, pas de ce qui est GARDÉ.",
+      clause: "ON",
+      exemple: "Un client sans commande livrée reste présent, avec toutes ses colonnes de commandes à NULL : la condition l'a privé de correspondance, pas de ligne.",
+      explication: "Une condition placée dans le ON fait partie de la définition de la correspondance : elle détermine quelles commandes viennent se relier à chaque client, et rien de plus. Le LEFT JOIN continue, lui, de garantir que tout client figure dans le résultat — les 13 qui n'ont aucune commande livrée y apparaissent simplement avec des colonnes vides. COUNT(DISTINCT c.id) renvoie donc 40, et non 27.",
+      retenir: "Une condition dans le ON restreint ce qui se relie ; elle ne retire jamais une ligne de la table de gauche d'un LEFT JOIN."
+    },
+    {
+      id: "p3-23", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Le filtre qui annule le LEFT JOIN",
+      question: "Affichez le nom de chaque client et l'identifiant de ses commandes LIVRÉES, en gardant tous les clients — même ceux qui n'ont aucune commande livrée.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client, puis l'identifiant de la commande livrée. Les 40 clients doivent apparaître ; ceux sans commande livrée auront un identifiant vide.",
+      depart: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE o.statut = 'livree'",
+      solution: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id AND o.statut = 'livree'",
+      comparer: {},
+      pieges: ["P1", "P3"],
+      piste: "Sur la ligne d'un client sans commande livrée, o.statut vaut NULL. Que lui fait un WHERE o.statut = 'livree' ?",
+      clause: "ON",
+      exemple: "46 lignes avec le WHERE, 59 avec la condition dans le ON : les 13 lignes d'écart sont les clients sans commande livrée.",
+      explication: "Le LEFT JOIN garde bien tous les clients, mais le WHERE s'applique APRÈS, sur le résultat de la jointure : pour un client sans commande livrée, o.statut vaut NULL, la condition NULL = 'livree' n'est jamais vraie, et la ligne est éliminée. Le LEFT JOIN est ainsi annulé sans que rien ne le signale — il ne reste que 46 lignes, exactement ce qu'une jointure ordinaire aurait donné. Déplacer la condition dans le ON la fait participer à la correspondance au lieu de filtrer après coup.",
+      retenir: "Une condition sur la table de droite d'un LEFT JOIN se met dans le ON. Dans un WHERE, elle élimine les lignes sans correspondance et transforme le LEFT JOIN en jointure ordinaire."
+    },
+    {
+      id: "p3-24", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 3,
+      titre: "Pourquoi le WHERE efface les lignes gardées",
+      question: "Après un LEFT JOIN, une ligne sans correspondance a toutes ses colonnes de droite à NULL. Que lui fait un WHERE o.statut = 'livree' ?",
+      options: [
+        "Il l'élimine : NULL = 'livree' n'est jamais vrai, et le LEFT JOIN se trouve annulé",
+        "Il la garde : un WHERE ne s'applique qu'aux lignes qui ont trouvé une correspondance",
+        "Il la garde et remplace le NULL par la valeur testée",
+        "Il provoque une erreur : une colonne NULL ne peut pas être comparée à un texte"
+      ],
+      reponse: 0,
+      pieges: ["P1", "P3"],
+      piste: "La règle du palier 2 sur NULL n'a pas changé : une comparaison avec NULL n'est jamais vraie, et un WHERE ne garde que ce qui est vrai.",
+      clause: "WHERE",
+      exemple: "C'est la même raison qui fait que WHERE ville <> 'Lyon' ne ramène pas les clients dont la ville est vide.",
+      explication: "Un WHERE ne garde que les lignes pour lesquelles sa condition est VRAIE. Une comparaison avec NULL n'est ni vraie ni fausse : elle est inconnue, donc la ligne est écartée — exactement comme au palier 2, où ville <> 'Lyon' laissait de côté les clients sans ville. Aucune erreur n'est levée, et le résultat ressemble à s'y méprendre à celui d'une jointure ordinaire. C'est pourquoi la condition doit être écrite dans le ON, où elle n'a pas à être vraie pour que la ligne de gauche subsiste.",
+      retenir: "Un WHERE sur une colonne de la table de droite élimine les lignes sans correspondance, puisque leur NULL ne satisfait aucune condition. La place de la condition — ON ou WHERE — change le sens de la requête."
+    },
+    {
+      id: "p3-25", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Les produits que personne n'a jamais commandés",
+      question: "Quels produits du catalogue n'ont jamais été commandés, pas même une fois ?",
+      consigne: "Une colonne : le nom de ces produits. Une ligne par produit concerné.",
+      solution: "SELECT p.nom FROM produits p LEFT JOIN lignes_commande l ON l.produit_id = p.id WHERE l.produit_id IS NULL",
+      comparer: {},
+      pieges: ["P2"],
+      piste: "Même forme que pour les clients sans commande : tout garder à gauche, puis ne retenir que les lignes restées vides à droite.",
+      clause: "IS NULL",
+      exemple: "SELECT c.nom FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE o.id IS NULL; applique la même anti-jointure aux clients.",
+      explication: "Cinq produits sur trente n'apparaissent dans aucune ligne de commande. L'anti-jointure est la seule façon simple de les trouver : la table produits ne contient aucune colonne qui dirait « jamais vendu », et la table lignes_commande ne peut pas, par construction, contenir la trace d'une vente qui n'a pas eu lieu. On cherche donc une absence, et une absence ne se lit que dans le vide laissé par la jointure.",
+      retenir: "L'anti-jointure répond aux questions en « jamais », « aucun », « sans » : ce sont les seules que les données ne contiennent pas directement, et qu'il faut déduire d'une correspondance manquante."
+    },
+    {
+      id: "p3-26", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Un rayon vide",
+      question: "Y a-t-il une catégorie du catalogue qui ne contient aucun produit ? Laquelle ?",
+      consigne: "Une colonne : le nom de la ou des catégories concernées.",
+      solution: "SELECT c.nom FROM categories c LEFT JOIN produits p ON p.categorie_id = c.id WHERE p.id IS NULL",
+      comparer: {},
+      pieges: ["P2"],
+      piste: "La même anti-jointure, un cran plus haut : les catégories sont pointées par les produits, comme les clients le sont par les commandes.",
+      clause: "IS NULL",
+      exemple: "Les 7 catégories sont visibles dans l'explorateur ; une seule n'est citée par aucun produit.",
+      explication: "La catégorie Jardin existe dans le catalogue mais aucun produit ne la désigne : la jointure ne lui trouve aucune correspondance, et c'est le NULL laissé à droite qui la révèle. Cette question se pose exactement comme celle des clients sans commande — seules changent les deux tables et la colonne qui les relie. C'est la forme à reconnaître plutôt qu'à réapprendre.",
+      retenir: "L'anti-jointure ne dépend pas des tables : dès qu'une table en pointe une autre, elle répond à « lesquelles ne sont jamais pointées ? »."
+    },
+    {
+      id: "p3-27", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Une anti-jointure qui ne renvoie rien",
+      question: "Quels clients n'ont jamais passé de commande ?",
+      consigne: "Une colonne : le nom de ces clients. Une ligne par client concerné.",
+      depart: "SELECT c.nom FROM clients c JOIN commandes o ON o.client_id = c.id WHERE o.id IS NULL",
+      solution: "SELECT c.nom FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE o.id IS NULL",
+      comparer: {},
+      pieges: ["P1"],
+      piste: "Cette requête ne renvoie aucune ligne. Dans une jointure ordinaire, une ligne peut-elle avoir une colonne de droite à NULL ?",
+      clause: "LEFT JOIN",
+      exemple: "Remplacer JOIN par LEFT JOIN suffit : le reste de la requête est déjà juste.",
+      explication: "Le résultat est vide, et c'est logique : une jointure ordinaire ne conserve que les lignes qui ONT une correspondance, donc o.id y a toujours une valeur. Chercher o.id IS NULL dans ce résultat, c'est chercher ce que la jointure vient d'éliminer — la condition ne peut jamais être vraie. L'anti-jointure a besoin du LEFT JOIN pour que les lignes sans correspondance soient présentes ; c'est seulement à cette condition que le IS NULL a quelque chose à trouver.",
+      retenir: "Un résultat vide alors qu'on attendait des lignes est le symptôme d'une anti-jointure écrite avec JOIN : sans LEFT, les lignes qu'on cherche ont déjà été écartées."
+    },
+    {
+      id: "p3-28", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Ce que le IS NULL désigne vraiment",
+      question: "Dans une anti-jointure (LEFT JOIN, puis WHERE o.id IS NULL), que signifie exactement une ligne où o.id vaut NULL ?",
+      options: [
+        "Aucune ligne de la table de droite ne correspondait à cette ligne de gauche",
+        "La commande existe, mais son identifiant n'a pas été renseigné dans la base",
+        "La commande a été supprimée de la base après avoir été passée",
+        "La jointure a échoué pour cette ligne, et SQLite le signale par un NULL"
+      ],
+      reponse: 0,
+      pieges: ["P1", "P3"],
+      piste: "Ce NULL était-il dans la base avant la requête, ou est-il apparu pendant ?",
+      clause: "IS NULL",
+      exemple: "La colonne commandes.id est une clé primaire : elle ne peut jamais être vide dans la table. Le NULL observé ici n'existe que dans le résultat.",
+      explication: "Ce NULL n'est pas une donnée manquante de la base : c'est le LEFT JOIN qui l'a fabriqué, pour remplir des colonnes qui n'avaient aucune ligne à recevoir. La distinction est essentielle — une clé primaire comme commandes.id ne peut pas être vide dans la table, donc un o.id à NULL ne peut venir que d'une correspondance introuvable. C'est ce qui rend l'anti-jointure fiable : tester ce NULL revient exactement à tester l'absence de correspondance.",
+      retenir: "Le NULL d'une anti-jointure est produit par la jointure elle-même, pas lu dans la base. Testez-le de préférence sur une colonne qui ne peut jamais être vide (la clé primaire), pour qu'il ne signifie rien d'autre qu'une absence de correspondance."
+    },
+    {
+      id: "p3-29", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le client et ses produits, en une seule requête",
+      question: "Pour la commande 1038, affichez le nom du client qui l'a passée et le nom de chaque produit qu'elle contient.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client (nommé client), puis le nom du produit (nommé produit). Une ligne par produit de la commande 1038.",
+      solution: "SELECT c.nom AS client, p.nom AS produit FROM commandes o JOIN clients c ON c.id = o.client_id JOIN lignes_commande l ON l.commande_id = o.id JOIN produits p ON p.id = l.produit_id WHERE o.id = 1038",
+      comparer: {},
+      piste: "Enchaînez les jointures : commandes mène à clients d'un côté, à lignes_commande puis produits de l'autre. Chaque JOIN a son propre ON.",
+      clause: "JOIN",
+      exemple: "AS sert ici à distinguer deux colonnes qui s'appelleraient toutes deux nom : c.nom AS client, p.nom AS produit.",
+      explication: "Une requête peut enchaîner autant de jointures que nécessaire, chacune avec son ON : on part de commandes, on remonte vers clients par client_id, on descend vers lignes_commande par commande_id, puis vers produits par produit_id. Le chemin suit les flèches de la carte des relations. Les deux tables clients et produits ont une colonne nom : sans les alias de colonne posés par AS, le résultat afficherait deux colonnes du même titre.",
+      retenir: "Les jointures s'enchaînent, chacune avec son propre ON. Le chemin à suivre est celui des clés étrangères, lisible sur la carte des relations."
+    },
+    {
+      id: "p3-30", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 3,
+      titre: "Trois tables, combien de lignes ?",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ? (commandes : 70 lignes ; lignes_commande : 142 ; produits : 30)",
+      requete: "SELECT o.id, p.nom, l.quantite FROM lignes_commande l JOIN produits p ON p.id = l.produit_id JOIN commandes o ON o.id = l.commande_id;",
+      predit: "nbLignes",
+      pieges: ["P4"],
+      piste: "Chaque ligne de lignes_commande désigne un seul produit et une seule commande. Combien de correspondances chacune trouve-t-elle donc ?",
+      clause: "JOIN",
+      exemple: "Les deux jointures partent de lignes_commande vers les tables qu'elle pointe : ni l'une ni l'autre ne peut la dédoubler.",
+      explication: "Les deux jointures partent de lignes_commande et vont vers les tables qu'elle POINTE : chacune de ses 142 lignes trouve exactement un produit et exactement une commande. Le nombre de lignes reste donc 142, quel que soit le nombre de jointures ajoutées dans ce sens. Enchaîner des jointures ne multiplie pas mécaniquement les lignes : seul compte, à chaque étape, le sens dans lequel le fil est tendu.",
+      retenir: "Ajouter une jointure vers une table pointée n'ajoute jamais de lignes. Le nombre de lignes n'augmente qu'en allant vers une table qui pointe, du côté « plusieurs »."
+    },
+    {
+      id: "p3-31", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "La quantité vendue de chaque produit",
+      question: "Pour chaque produit commandé au moins une fois, quelle quantité totale en a été vendue ? Les commandes annulées ne comptent pas ; les retours, si.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du produit, puis la quantité totale vendue. Une ligne par produit concerné.",
+      solution: "SELECT p.nom, SUM(l.quantite) FROM lignes_commande l JOIN produits p ON p.id = l.produit_id JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY p.id",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "La quantité est dans lignes_commande, le nom dans produits, le statut dans commandes : les trois tables sont nécessaires. Regroupez ensuite par produit.",
+      clause: "GROUP BY",
+      exemple: "SELECT p.nom, SUM(l.quantite) … GROUP BY p.id : regrouper par l'identifiant plutôt que par le nom évite de confondre deux produits qui porteraient le même nom.",
+      explication: "C'est la première requête du palier qui joint ET regroupe. Les trois tables sont indispensables : la quantité vient de lignes_commande, le nom de produits, et le statut — qui décide ce qui compte comme vendu — de commandes. Ici la jointure est légitime et le SUM porte bien sur une colonne de lignes_commande, du côté « plusieurs » : aucun gonflement. La définition de « vendu » vient de la consigne, qui dit explicitement que les annulées sortent et que les retours restent.",
+      retenir: "Jointure et regroupement se combinent sans difficulté tant que la colonne additionnée appartient à la table du côté « plusieurs »."
+    },
+    {
+      id: "p3-32", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Un ON recopié trop vite",
+      question: "Pour la commande 1038, affichez le nom du client et le nom de chaque produit commandé.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du client (nommé client), puis le nom du produit (nommé produit). Une ligne par produit de la commande 1038.",
+      depart: "SELECT c.nom AS client, p.nom AS produit FROM commandes o JOIN clients c ON c.id = o.client_id JOIN lignes_commande l ON l.commande_id = o.id JOIN produits p ON p.id = l.commande_id WHERE o.id = 1038",
+      solution: "SELECT c.nom AS client, p.nom AS produit FROM commandes o JOIN clients c ON c.id = o.client_id JOIN lignes_commande l ON l.commande_id = o.id JOIN produits p ON p.id = l.produit_id WHERE o.id = 1038",
+      comparer: {},
+      piste: "Cette requête ne renvoie aucune ligne. Regardez le dernier ON : à quoi compare-t-on l'identifiant d'un produit ?",
+      clause: "ON",
+      exemple: "Les identifiants de produits vont de 101 à 130 ; ceux des commandes commencent à 1001. Aucun ne peut correspondre à l'autre.",
+      explication: "Le dernier ON compare p.id à l.commande_id au lieu de l.produit_id : il demande le produit dont l'identifiant vaut 1038, qui n'existe pas. Aucune correspondance, donc aucune ligne. C'est l'erreur type du ON recopié d'une jointure à l'autre sans changer la colonne. Elle se repère ici au résultat vide — mais si les identifiants des deux tables s'étaient recouverts, la requête aurait renvoyé des lignes, toutes fausses, et le résultat aurait eu l'air normal.",
+      retenir: "Chaque jointure a son propre ON, et chaque ON sa propre colonne. Un résultat vide sur une requête à plusieurs jointures désigne presque toujours le ON recopié sans être adapté."
+    },
+    {
+      id: "p3-33", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Payé hier, affiché aujourd'hui",
+      question: "Combien de lignes de commande ont été facturées à un prix différent du prix actuel du produit ?",
+      consigne: "Une seule valeur : le nombre de lignes de commande dont le prix facturé diffère du prix affiché aujourd'hui dans le catalogue.",
+      solution: "SELECT COUNT(*) FROM lignes_commande l JOIN produits p ON p.id = l.produit_id WHERE l.prix_unitaire <> p.prix",
+      comparer: {},
+      pieges: ["P10"],
+      piste: "Deux prix existent : celui figé sur la ligne de commande (prix_unitaire) et celui du catalogue (prix). La jointure permet de les comparer.",
+      clause: "JOIN",
+      exemple: "La commande 1004 contient une tablette facturée 479,00 €, alors que le catalogue l'affiche aujourd'hui à 449,00 €.",
+      explication: "La table lignes_commande conserve le prix FACTURÉ au moment de la commande ; la table produits porte le prix ACTUEL. Les deux cohabitent volontairement, et la jointure est le seul moyen de les confronter : 22 lignes sur 142 ont été facturées à un autre prix que celui affiché aujourd'hui. Toutes sont antérieures à octobre 2025 — ce sont les prix qui ont changé depuis, pas les commandes qui ont été mal saisies.",
+      retenir: "Un prix facturé n'est pas un prix actuel : une commande garde la trace de ce qui a été payé, pas de ce que coûte l'article aujourd'hui."
+    },
+    {
+      id: "p3-34", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Pourquoi le prix est écrit deux fois",
+      question: "La table produits contient déjà le prix de chaque article. Pourquoi lignes_commande porte-t-elle en plus une colonne prix_unitaire ?",
+      options: [
+        "Pour figer le prix payé : il ne doit pas changer quand le catalogue est mis à jour",
+        "Par erreur de conception : cette colonne fait double emploi avec produits.prix",
+        "Pour accélérer les requêtes, en évitant d'avoir à joindre les deux tables",
+        "Parce que SQLite interdit de lire le prix d'une autre table dans un calcul"
+      ],
+      reponse: 0,
+      pieges: ["P10"],
+      piste: "Que deviendrait le montant d'une commande de l'an dernier si le prix du produit changeait demain ?",
+      clause: "JOIN",
+      exemple: "La tablette vaut 449,00 € aujourd'hui, mais la commande 1004 a bien été payée 479,00 € : son montant ne doit pas bouger.",
+      explication: "C'est l'exception qui confirme la règle du chapitre 1 : une information n'est écrite qu'une fois, SAUF quand elle doit être figée. Le prix du catalogue change avec le temps ; le prix payé, lui, appartient à l'histoire de la commande et ne doit jamais bouger. Recopier le prix sur la ligne de commande n'est donc pas une redondance mais une conservation — sans elle, le montant de toutes les commandes passées se recalculerait à chaque changement de tarif.",
+      retenir: "Une valeur recopiée dans une table n'est pas toujours une faute : quand elle doit témoigner d'un moment précis (un prix payé), la figer est la bonne conception."
+    },
+    {
+      id: "p3-35", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Le montant recalculé au prix d'aujourd'hui",
+      question: "Quel montant de produits la commande 1004 a-t-elle représenté ?",
+      consigne: "Une seule valeur : le montant des produits réellement facturés sur cette commande, frais de port exclus.",
+      depart: "SELECT SUM(l.quantite * p.prix) FROM lignes_commande l JOIN produits p ON p.id = l.produit_id WHERE l.commande_id = 1004",
+      solution: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = 1004",
+      comparer: {},
+      pieges: ["P10"],
+      piste: "Deux prix sont disponibles après cette jointure. Lequel la commande a-t-elle réellement facturé ?",
+      clause: "SUM",
+      exemple: "498,50 € avec le prix facturé, 468,50 € avec le prix d'aujourd'hui : 30,00 € d'écart, dus à la seule tablette.",
+      explication: "La requête de départ multiplie les quantités par le prix ACTUEL du catalogue : elle recalcule la commande aux tarifs d'aujourd'hui et renvoie 468,50 € au lieu des 498,50 € réellement facturés. L'écart vient de la tablette, passée de 479,00 € à 449,00 €. Une fois la bonne colonne choisie, la jointure elle-même devient inutile : prix_unitaire est déjà dans lignes_commande, et la question ne demande rien d'autre.",
+      retenir: "Tout montant historique se calcule avec prix_unitaire, jamais avec le prix du catalogue. Et si la colonne voulue est déjà dans la table de départ, la jointure est superflue."
+    },
+    {
+      id: "p3-36", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le chiffre d'affaires produits de la boutique",
+      question: "Quel est le chiffre d'affaires PRODUITS de toute la boutique ? Les commandes annulées et retournées en sont exclues.",
+      consigne: "Une seule valeur : la somme des quantités multipliées par les prix facturés, pour les commandes qui ne sont ni annulées ni retournées. Les frais de port sont exclus.",
+      solution: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee')",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "Le montant est dans lignes_commande, le statut dans commandes : c'est la jointure qui permet de filtrer l'un par l'autre.",
+      clause: "JOIN",
+      exemple: "Au palier 2, cette question ne pouvait porter que sur une seule commande à la fois : il manquait la jointure pour atteindre le statut.",
+      explication: "Le calcul attendu depuis le palier 2 est enfin possible : 12 387,00 €. La jointure sert ici uniquement à filtrer — aucune colonne de commandes n'est affichée, mais c'est elle qui porte le statut. Le SUM reste sur lignes_commande, du côté « plusieurs », donc rien n'est gonflé. Les frais de port sont volontairement hors du compte : c'est ce que « produits » signifie, et c'est pourquoi la consigne le dit.",
+      retenir: "Une jointure peut ne servir qu'à filtrer : la table jointe n'apparaît pas dans le résultat, mais c'est elle qui porte la condition."
+    },
+    {
+      id: "p3-37", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Un chiffre d'affaires qui compte les annulées",
+      question: "Quel est le chiffre d'affaires PRODUITS de toute la boutique ? Les commandes annulées et retournées en sont exclues.",
+      consigne: "Une seule valeur : la somme des quantités multipliées par les prix facturés, pour les commandes qui ne sont ni annulées ni retournées. Les frais de port sont exclus.",
+      depart: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id",
+      solution: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee')",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "La jointure donne accès au statut, mais aucune condition ne s'en sert : quelles commandes sont comptées ?",
+      clause: "WHERE",
+      exemple: "16 233,50 € tous statuts confondus, contre 12 387,00 € une fois les annulées et les retournées écartées.",
+      explication: "La jointure est posée, le calcul est juste, mais rien ne filtre : les 11 commandes annulées et les 5 retournées sont comptées comme les autres, et le total passe de 12 387,00 € à 16 233,50 € — près de 4 000 € d'écart. Joindre commandes sans utiliser son statut ne sert à rien ici : la table n'est là que pour permettre ce filtre. Un chiffre d'affaires qui ne dit pas quels statuts il retient n'a pas de sens, et c'est pourquoi la consigne le précise toujours.",
+      retenir: "Un chiffre d'affaires se définit autant par ce qu'il exclut que par ce qu'il additionne. Si une jointure n'apporte ni colonne affichée ni condition, c'est qu'il manque la condition."
+    },
+    {
+      id: "p3-38", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Quel chiffre d'affaires demande-t-on ?",
+      question: "Un responsable demande « le chiffre d'affaires de la boutique » sans autre précision. Quelle est la bonne réaction ?",
+      options: [
+        "Demander lesquels des statuts il retient et si les frais de port sont inclus : les réponses vont de 11 490,00 € à 16 233,50 €",
+        "Donner le total toutes commandes confondues, puisque aucune exclusion n'a été demandée",
+        "Donner le total des seules commandes livrées, la seule définition rigoureuse",
+        "Donner le total frais de port inclus : c'est la somme que la boutique a réellement encaissée"
+      ],
+      reponse: 0,
+      pieges: ["P7"],
+      piste: "Combien de nombres différents cette même question peut-elle produire sur cette base ?",
+      clause: "SUM",
+      exemple: "Livrées seules : 11 490,00 €. Ni annulées ni retournées : 12 387,00 €. Hors annulées : 12 724,50 €. Tous statuts : 16 233,50 €.",
+      explication: "Sur cette base, la même question admet au moins quatre réponses défendables, séparées par près de 5 000 €. Aucune n'est fausse en soi : elles répondent à des questions différentes que le mot « chiffre d'affaires » ne distingue pas. Choisir seul une définition sans le dire, c'est produire un chiffre que personne ne peut vérifier. La compétence attendue n'est pas de connaître la bonne formule, mais de refuser l'ambiguïté avant de calculer.",
+      retenir: "Une question métier mal définie ne se répare pas en SQL. Avant d'écrire la requête, il faut faire préciser ce que le mot recouvre — statuts inclus, frais de port comptés ou non."
+    },
+    {
+      id: "p3-39", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les frais de port des commandes retenues",
+      question: "Quel est le total des frais de port des commandes qui ne sont ni annulées ni retournées ?",
+      consigne: "Une seule valeur : la somme des frais de port de ces commandes, chacune comptée une seule fois.",
+      solution: "SELECT SUM(frais_port) FROM commandes WHERE statut NOT IN ('annulee','retournee')",
+      comparer: {},
+      pieges: ["P4", "P7"],
+      piste: "Les frais de port appartiennent à la commande. Une autre table est-elle nécessaire pour les additionner ?",
+      clause: "SUM",
+      exemple: "232,00 € : c'est ce qu'il faut ajouter aux 12 387,00 € de produits pour obtenir le chiffre d'affaires TOTAL, 12 619,00 €.",
+      explication: "La réponse est 232,00 €, et la bonne requête ne joint rien : frais_port et statut sont tous deux dans commandes. C'est le réflexe à acquérir après ce palier — la jointure n'est pas une amélioration, c'est un outil qui a un coût. Ajouter ici lignes_commande ne donnerait pas une information de plus, seulement des frais comptés une fois par ligne de produit.",
+      retenir: "Avant de joindre, vérifiez que la table de départ ne contient pas déjà tout ce dont la question a besoin. La jointure inutile n'est pas neutre : elle fausse les totaux."
+    },
+    {
+      id: "p3-40", type: "corriger",
+      niveau: "P3", competence: "joindre", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Des frais de port ajoutés ligne par ligne",
+      question: "Quel est le chiffre d'affaires PRODUITS de toute la boutique ? Les commandes annulées et retournées en sont exclues.",
+      consigne: "Une seule valeur : la somme des quantités multipliées par les prix facturés, pour les commandes qui ne sont ni annulées ni retournées. Les frais de port sont exclus.",
+      depart: "SELECT SUM(l.quantite * l.prix_unitaire + o.frais_port) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee')",
+      solution: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee')",
+      comparer: {},
+      pieges: ["P4", "P7"],
+      piste: "La consigne exclut les frais de port. Et si on les voulait, les ajouter DANS la somme les compterait-il une fois par commande ?",
+      clause: "SUM",
+      exemple: "12 911,50 € au lieu de 12 387,00 € : l'écart n'est pas les 232,00 € de frais réels, mais bien davantage.",
+      explication: "Deux fautes se cumulent. La consigne demande le chiffre d'affaires PRODUITS, qui exclut les frais de port : les ajouter est hors sujet. Et la façon de les ajouter est elle-même fausse — écrits à l'intérieur du SUM, ils sont comptés une fois par ligne de produit, et non une fois par commande : le total atteint 12 911,50 €, alors que le chiffre d'affaires TOTAL correct vaut 12 619,00 €. Obtenir ce total exact en une seule requête demande un outil du palier 4 ; pour l'instant, on additionne les produits d'un côté et les frais de port de l'autre.",
+      retenir: "Une colonne de la commande ajoutée à l'intérieur d'un SUM calculé sur ses lignes est comptée autant de fois qu'elle a de lignes. Les deux totaux se calculent séparément, puis s'additionnent."
+    },
+    {
+      id: "p3-41", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 3,
+      titre: "Pourquoi 12 911,50 € plutôt que 12 619,00 €",
+      question: "Les frais de port des commandes retenues valent 232,00 € au total, et le chiffre d'affaires produits 12 387,00 € — soit 12 619,00 € en tout. Pourquoi les ajouter à l'intérieur du SUM après la jointure donne-t-il 12 911,50 € ?",
+      options: [
+        "Les frais d'une commande sont ajoutés une fois par ligne de produit : les commandes à plusieurs lignes les paient plusieurs fois",
+        "Les frais de port des commandes annulées sont réintégrés par la jointure",
+        "SQLite arrondit différemment quand une addition est placée à l'intérieur d'un SUM",
+        "Les frais de port de certaines commandes sont comptés en double dans la table commandes"
+      ],
+      reponse: 0,
+      pieges: ["P4"],
+      piste: "Combien de fois une commande à 4 lignes de produits apparaît-elle dans le résultat joint ?",
+      clause: "SUM",
+      exemple: "Les 6,50 € de la commande 1038, qui a 4 lignes, sont comptés 26,00 € dans ce total.",
+      explication: "C'est le gonflement par jointure du chapitre 4, appliqué à l'argent. Après la jointure, une commande occupe autant de lignes qu'elle a de produits, et frais_port y est recopié sur chacune : l'addition le reprend à chaque fois. L'écart entre 12 911,50 € et 12 619,00 € — 292,50 € — correspond exactement aux frais surcomptés des commandes à plusieurs lignes. Aucun arrondi, aucune commande en trop : seulement une valeur unique additionnée plusieurs fois.",
+      retenir: "Le gonflement par jointure se reconnaît à ceci : le résultat dépasse le total attendu d'un montant qui correspond aux lignes surnuméraires. Il ne se corrige pas en ajustant le calcul, mais en calculant chaque total sur sa propre table."
+    },
+    {
+      id: "p3-42", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Combien de clients ont été parrainés",
+      question: "Combien de clients ont été parrainés par un autre client ?",
+      consigne: "Une seule valeur : le nombre de clients dont le parrain est renseigné.",
+      solution: "SELECT COUNT(parrain_id) FROM clients",
+      comparer: {},
+      pieges: ["P9"],
+      piste: "La colonne parrain_id est vide pour les clients sans parrain. Quelle écriture de COUNT ignore les valeurs vides ?",
+      clause: "COUNT",
+      exemple: "La règle vient du palier 2 : COUNT(colonne) ne compte que les lignes où cette colonne a une valeur.",
+      explication: "Neuf clients sur quarante ont un parrain : leur colonne parrain_id contient l'identifiant d'un autre client de la même table. Les 31 autres l'ont vide. Aucune jointure n'est nécessaire pour les compter — COUNT(parrain_id) suffit. Retenez ce 9 : le chapitre s'en sert pour prévoir ce que donnera la jointure de la table avec elle-même.",
+      retenir: "Une table peut se pointer elle-même : clients.parrain_id contient l'identifiant d'un autre client. C'est une clé étrangère comme une autre, dont la cible se trouve dans la même table."
+    },
+    {
+      id: "p3-43", type: "requete",
+      niveau: "P3", competence: "joindre", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Chaque filleul et son parrain",
+      question: "Affichez le nom de chaque client parrainé, et le nom du client qui l'a parrainé.",
+      consigne: "Deux colonnes, dans cet ordre : le nom du filleul (nommé filleul), puis le nom de son parrain (nommé parrain). Une ligne par client parrainé.",
+      solution: "SELECT c.nom AS filleul, p.nom AS parrain FROM clients c JOIN clients p ON p.id = c.parrain_id",
+      comparer: {},
+      pieges: ["P9"],
+      piste: "La même table joue deux rôles. Donnez-lui deux alias différents, et traitez-la comme deux tables distinctes.",
+      clause: "JOIN",
+      exemple: "FROM clients c JOIN clients p : c désigne le filleul, p le parrain — deux lectures de la même table, sous deux noms.",
+      explication: "Rien de nouveau dans la syntaxe : c'est un JOIN ordinaire, dont les deux côtés se trouvent être la même table. Les alias deviennent alors indispensables, et ils cessent d'être un simple confort d'écriture : sans eux, impossible de dire si nom désigne le filleul ou le parrain. Le résultat compte 9 lignes — une par client parrainé. Les 31 clients sans parrain n'apparaissent pas, la jointure étant ordinaire.",
+      retenir: "Une auto-jointure relie une table à elle-même : deux alias différents la transforment en deux tables, l'une jouant un rôle, l'autre l'autre."
+    },
+    {
+      id: "p3-44", type: "predire",
+      niveau: "P3", competence: "joindre", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Combien de lignes pour une auto-jointure",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ? (la table clients compte 40 lignes, dont 9 ont un parrain renseigné)",
+      requete: "SELECT c.nom AS filleul, p.nom AS parrain FROM clients c JOIN clients p ON p.id = c.parrain_id;",
+      predit: "nbLignes",
+      pieges: ["P9", "P3"],
+      piste: "Une jointure ordinaire ne garde que les lignes qui trouvent une correspondance. Que trouve un client dont le parrain_id est vide ?",
+      clause: "JOIN",
+      exemple: "Avec LEFT JOIN à la place de JOIN, le résultat compterait 40 lignes : les 31 clients sans parrain y figureraient avec un parrain vide.",
+      explication: "Chaque client dont le parrain_id est renseigné trouve exactement un parrain : 9 lignes. Les 31 autres ont parrain_id à NULL, et NULL ne correspond à aucun identifiant — pas même à un autre NULL. La jointure ordinaire les écarte donc tous. Le nombre de lignes n'est ni 40 ni 31, mais bien le nombre de valeurs renseignées dans la colonne qui relie : c'est le même raisonnement que pour les clients sans commande, appliqué à une table qui se pointe elle-même.",
+      retenir: "Une clé étrangère vide ne trouve jamais de correspondance : dans une jointure ordinaire, les lignes dont la colonne de liaison est NULL disparaissent toujours."
+    },
+    {
+      id: "p3-45", type: "qcm",
+      niveau: "P3", competence: "joindre", categorie: "Comprendre", difficulte: 2,
+      titre: "Pourquoi deux alias sont obligatoires",
+      question: "Dans une auto-jointure, pourquoi faut-il donner deux alias différents à la même table ?",
+      options: [
+        "Parce que la table joue deux rôles : sans deux noms, rien ne dit de quel exemplaire vient chaque colonne",
+        "Parce que SQLite refuse qu'une table soit citée deux fois dans un même FROM",
+        "Pour que la requête s'exécute plus vite, en ne lisant la table qu'une seule fois",
+        "Parce que les alias remplacent le ON quand les deux tables sont identiques"
+      ],
+      reponse: 0,
+      pieges: ["P9"],
+      piste: "Si les deux exemplaires s'appelaient tous deux clients, comment écririez-vous « le nom du parrain » ?",
+      clause: "AS",
+      exemple: "FROM clients c JOIN clients p ON p.id = c.parrain_id : c.nom est le filleul, p.nom le parrain.",
+      explication: "Les deux exemplaires de la table sont indiscernables tant qu'on ne les nomme pas : écrire nom ne voudrait rien dire, et ON id = parrain_id serait ambigu des deux côtés. Les alias créent la distinction qui manque — c est le filleul, p le parrain — et c'est elle, pas la syntaxe, qui porte le sens de la requête. Les alias ne changent rien à la façon dont SQLite lit la table, et ne remplacent jamais le ON : la condition de correspondance reste indispensable.",
+      retenir: "Dans une auto-jointure, les alias ne sont plus un confort mais la seule chose qui distingue les deux rôles joués par la même table."
     }
   ]
 };
@@ -1681,6 +2390,300 @@ const CHAPITRES = [
       astuce: "Chaque fois qu'une consigne de ce cours parle d'argent, relisez-la en vous demandant : parle-t-elle des produits seuls, ou du total payé ? Le mot qu'elle choisit (« produits » ou « total ») répond toujours à cette question — sans exception à partir de maintenant."
     },
     exercices: ["p2-37", "p2-38", "p2-39"]
+  },
+  {
+    id: "ch-p3-1", niveau: "P3", titre: "Pourquoi relier deux tables", duree: "5 min",
+    resume: "Une information n'est écrite qu'à un seul endroit : pour la lire avec une autre, il faut relier les deux tables qui la portent.",
+    lecon: {
+      intro: "Jusqu'ici, chaque requête lisait une seule table. Mais la boutique n'écrit jamais deux fois la même information : le nom d'un client vit dans clients, et nulle part ailleurs. La table commandes ne contient donc pas ce nom — seulement un client_id qui dit de quelle ligne de clients il s'agit. Répondre à « le nom du client et la date de sa commande » demande de lire les deux tables ensemble.",
+      points: [
+        "Une clé étrangère (commandes.client_id) contient l'identifiant d'une ligne d'une autre table : c'est le fil qui relie les deux, et la carte des relations de l'explorateur montre tous ces fils.",
+        "Écrire l'information une seule fois est une qualité, pas un défaut : un client qui change de nom se corrige à un seul endroit, et ses commandes suivent automatiquement.",
+        "La contrepartie, c'est qu'aucune table ne répond plus seule aux questions qui mêlent deux sujets : il faut les relier au moment de lire.",
+        "Relier deux tables par le fil qui les unit ne crée pas de lignes nouvelles : à chaque commande correspond un seul client, donc le résultat garde une ligne par commande et gagne des colonnes."
+      ],
+      exemple: {
+        titre: "Le fil entre deux tables",
+        code: "SELECT client_id, date_commande FROM commandes LIMIT 3;",
+        resultat: "Trois lignes, dont des identifiants (201, 202…) à la place des noms.",
+        commentaire: "Ces nombres ne sont pas des noms, mais ils y mènent : 201 désigne la ligne de clients dont l'id vaut 201. Ouvrez l'explorateur sur les deux tables pour suivre le fil à la main — c'est exactement ce travail qu'une jointure va faire pour vous, sur les 70 commandes à la fois."
+      },
+      astuce: "Avant d'écrire une jointure, repérez son fil sur la carte des relations de l'explorateur : elle indique quelle colonne pointe vers quelle autre, et donne ainsi la condition à écrire après le ON, sans avoir à la deviner."
+    },
+    exercices: ["p3-01", "p3-02"]
+  },
+  {
+    id: "ch-p3-2", niveau: "P3", titre: "La première jointure : JOIN … ON", duree: "7 min",
+    resume: "JOIN dit quelles tables lire ensemble, ON dit comment elles se correspondent — et sans ON, tout se mélange.",
+    lecon: {
+      intro: "Une jointure s'écrit en deux temps : JOIN nomme la seconde table, ON donne la condition qui met ses lignes en correspondance avec celles de la première. Ces deux mots vont toujours ensemble. Oublier le ON ne provoque aucune erreur : SQLite associe alors chaque ligne de l'une à chaque ligne de l'autre, et renvoie un résultat énorme et faux.",
+      points: [
+        "FROM commandes o JOIN clients c ON c.id = o.client_id se lit : lis commandes, et pour chaque commande va chercher la ligne de clients dont l'id vaut son client_id.",
+        "Les lettres o et c sont des alias : un nom court donné à une table pour la durée de la requête. Ils ne changent rien au résultat, ils rendent les colonnes lisibles.",
+        "Dès que deux tables sont en jeu, préfixez les colonnes : c.nom, o.date_commande. Les deux tables ont une colonne id, et rien d'autre que le préfixe ne dit de laquelle on parle.",
+        "La condition du ON est presque toujours la même : la clé étrangère d'une table contre la clé primaire de l'autre. La carte des relations de l'explorateur la donne telle quelle."
+      ],
+      exemple: {
+        titre: "Deux tables, un seul résultat",
+        code: "SELECT c.nom, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id;",
+        resultat: "70 lignes : le nom du client en clair, à côté de la date de sa commande.",
+        commentaire: "Le nom vient de clients, la date de commandes, et le ON garantit que les deux appartiennent bien à la même commande. Sans ce ON, le même SELECT renverrait 2 800 lignes — chaque commande au nom de chacun des 40 clients."
+      },
+      astuce: "Si un résultat est bien plus gros que la plus grande des deux tables, et que sa taille ressemble au produit de leurs tailles, cherchez le ON manquant avant toute autre chose."
+    },
+    exercices: ["p3-03", "p3-04", "p3-05", "p3-06"]
+  },
+  {
+    id: "ch-p3-3", niveau: "P3", titre: "Combien de lignes une jointure renvoie-t-elle ?", duree: "6 min",
+    resume: "Le compte vient toujours du côté « plusieurs » : relier commandes à ses lignes de produits fait passer de 70 à 142.",
+    lecon: {
+      intro: "Une jointure correcte ne garantit pas que le nombre de lignes reste le même. Tout dépend du sens dans lequel le fil est tendu : vers la table qu'on pointe, ou vers celle qui nous pointe. C'est la question la plus utile à se poser avant d'exécuter, parce qu'elle décide de tout ce qu'on calculera ensuite.",
+      points: [
+        "Vers la table pointée (une commande → son client) : chaque ligne trouve une seule correspondance, le nombre de lignes ne change pas. 70 commandes donnent 70 lignes.",
+        "Vers la table qui pointe (une commande ← ses lignes de produits) : chaque ligne du côté « plusieurs » donne une ligne de résultat. 70 commandes et 142 lignes de produits donnent 142 lignes.",
+        "Dans ce second cas, les colonnes de la commande (date, statut, frais de port) sont recopiées à l'identique sur chacune de ses lignes : la répétition est normale, c'est ainsi qu'une jointure fonctionne.",
+        "Une jointure ne résume rien et n'additionne rien : elle met des lignes côte à côte. Tant qu'on lit, cette répétition est inoffensive ; dès qu'on additionne, elle fausse tout — le chapitre suivant le montre."
+      ],
+      exemple: {
+        titre: "De 70 à 142",
+        code: "SELECT o.id, l.produit_id, l.quantite FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id;",
+        resultat: "142 lignes, alors que la table commandes n'en compte que 70.",
+        commentaire: "Les 70 commandes sont toutes présentes, mais celles qui ont plusieurs produits occupent plusieurs lignes : la commande 1038, qui en a 4, apparaît 4 fois. Le nombre de lignes du résultat est celui de lignes_commande, pas celui de commandes."
+      },
+      astuce: "Avant d'exécuter une jointure, demandez-vous de quel côté est le « plusieurs ». La carte des relations l'indique par ses 1 et ses N : le résultat aura le nombre de lignes du côté N."
+    },
+    exercices: ["p3-07", "p3-08", "p3-09"]
+  },
+  {
+    id: "ch-p3-4", niveau: "P3", titre: "Le total gonflé par la jointure", duree: "7 min",
+    resume: "Additionner une colonne de la table « une seule ligne » après une jointure la compte une fois par ligne liée — et le total est toujours trop grand.",
+    lecon: {
+      intro: "C'est le piège le plus coûteux de tout le palier, et le plus discret : la requête s'exécute, renvoie un nombre d'apparence normale, et ce nombre est faux. Il naît de ce que le chapitre précédent a montré — une commande à plusieurs lignes de produits est répétée autant de fois — et il frappe dès qu'on additionne une colonne qui appartient à la commande elle-même.",
+      points: [
+        "Une colonne comme frais_port appartient à la commande, pas à ses lignes de produits : elle vaut une seule fois par commande, quel que soit le nombre d'articles.",
+        "Après la jointure, cette valeur unique est recopiée sur chaque ligne liée : SUM l'additionne alors une fois par ligne de produit, et non une fois par commande.",
+        "L'erreur ne va que dans un sens, vers le haut : aucune commande ne peut être comptée moins d'une fois, et toute commande à plusieurs lignes est comptée plusieurs fois.",
+        "La bonne réaction est presque toujours de retirer la jointure : si la question ne porte que sur commandes, aucune autre table n'a à intervenir. Quand la jointure est vraiment nécessaire, c'est COUNT(DISTINCT identifiant) qui permet de compter juste."
+      ],
+      exemple: {
+        titre: "306,50 € ou 636,00 € ?",
+        code: "SELECT SUM(frais_port) FROM commandes;",
+        resultat: "306,50 € — le vrai total, chaque commande comptée une fois.",
+        commentaire: "La même somme calculée après une jointure avec lignes_commande renvoie 636,00 €, soit plus du double : les frais de la commande 1038, 6,50 €, y sont comptés 4 fois parce qu'elle a 4 lignes de produits. Les deux requêtes s'exécutent sans la moindre erreur ; seule la question « sur quoi est-ce que j'additionne ? » les sépare."
+      },
+      astuce: "Après avoir écrit un SUM ou un COUNT dans une requête qui contient une jointure, demandez-vous toujours : cette colonne appartient-elle à la table du côté « plusieurs » ? Si non, le total est gonflé."
+    },
+    exercices: ["p3-10", "p3-11", "p3-12"]
+  },
+  {
+    id: "ch-p3-5", niveau: "P3", titre: "LEFT JOIN : garder ceux qui n'ont rien", duree: "6 min",
+    resume: "Une jointure ordinaire écarte sans rien dire les lignes sans correspondance ; LEFT JOIN les garde, avec des colonnes vides.",
+    lecon: {
+      intro: "Une jointure ordinaire ne garde que les lignes qui se correspondent des deux côtés. C'est souvent ce qu'on veut — mais pas toujours : « tous les clients, même ceux qui n'ont jamais commandé » est une question parfaitement légitime, à laquelle JOIN répond faux sans prévenir. LEFT JOIN existe pour ces cas-là.",
+      points: [
+        "LEFT JOIN garde toutes les lignes de la table de GAUCHE, celle écrite juste avant lui, qu'elles aient ou non une correspondance à droite.",
+        "Pour une ligne de gauche sans correspondance, les colonnes de droite valent NULL : la ligne existe, mais elle est vide de ce côté.",
+        "Ce NULL n'est pas une donnée manquante de la base : c'est la jointure qui le fabrique, et il est la trace exploitable de l'absence.",
+        "L'ordre des tables cesse d'être indifférent : dans un LEFT JOIN, c'est celle de gauche qui est protégée. Écrivez en premier la table dont aucune ligne ne doit disparaître."
+      ],
+      exemple: {
+        titre: "70 commandes, 76 lignes",
+        code: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id;",
+        resultat: "76 lignes : les 70 commandes, plus 6 clients à l'identifiant vide.",
+        commentaire: "Les 6 lignes supplémentaires sont les clients qui n'ont jamais commandé : ils apparaissent avec leur nom, et un identifiant de commande à NULL. Avec JOIN au lieu de LEFT JOIN, ces 6 lignes disparaîtraient — sans message, sans trace."
+      },
+      astuce: "Relisez la consigne en cherchant les mots « tous », « chaque », « même ceux qui n'ont pas ». Ils signalent presque toujours un LEFT JOIN, et une jointure ordinaire y répondrait faux."
+    },
+    exercices: ["p3-13", "p3-14", "p3-15"]
+  },
+  {
+    id: "ch-p3-6", niveau: "P3", titre: "Trouver ce qui n'existe pas : l'anti-jointure", duree: "6 min",
+    resume: "LEFT JOIN pour tout garder, puis IS NULL pour ne retenir que les lignes sans correspondance : c'est ainsi qu'on répond aux questions en « jamais ».",
+    lecon: {
+      intro: "« Quels clients n'ont jamais commandé ? » est une question que les données ne contiennent pas : aucune table ne porte la trace d'une commande qui n'a pas eu lieu. Il faut la déduire, et la déduction tient en deux temps — garder tout le monde, puis ne retenir que ceux pour qui la jointure n'a rien trouvé.",
+      points: [
+        "Premier temps : LEFT JOIN, pour que les lignes sans correspondance soient présentes dans le résultat.",
+        "Second temps : WHERE colonne_de_droite IS NULL, pour ne garder que celles-là.",
+        "Testez ce IS NULL sur une colonne qui ne peut jamais être vide dans la table — la clé primaire. Son NULL ne peut alors signifier qu'une seule chose : aucune correspondance.",
+        "Avec JOIN au lieu de LEFT JOIN, cette requête renvoie toujours zéro ligne : les lignes recherchées ont été éliminées avant d'être testées."
+      ],
+      exemple: {
+        titre: "Chercher une absence",
+        code: "SELECT c.nom FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE o.id IS NULL;",
+        resultat: "6 lignes : les clients qui n'ont jamais rien commandé.",
+        commentaire: "La même forme répond à « quels produits n'ont jamais été commandés ? » (5 produits) ou « quelle catégorie ne contient aucun produit ? » (Jardin). Seules changent les deux tables et la colonne du ON : c'est une forme à reconnaître, pas trois requêtes à apprendre."
+      },
+      astuce: "Un résultat vide là où vous attendiez des lignes, sur une requête qui cherche une absence : vérifiez d'abord que la jointure est bien un LEFT JOIN. C'est l'erreur la plus fréquente, et la plus silencieuse."
+    },
+    exercices: ["p3-16", "p3-17", "p3-18"]
+  },
+  {
+    id: "ch-p3-7", niveau: "P3", titre: "Compter après un LEFT JOIN", duree: "6 min",
+    resume: "COUNT(*) compte la ligne que le LEFT JOIN a créée, et crédite d'une commande un client qui n'en a aucune.",
+    lecon: {
+      intro: "Le LEFT JOIN crée une ligne pour chaque élément sans correspondance. Cette ligne existe, elle est donc comptée — et c'est exactement ce qu'il ne faut pas. L'erreur donne un tableau d'apparence impeccable, avec le bon nombre de lignes et les bons noms, où seuls quelques chiffres sont faux.",
+      points: [
+        "COUNT(*) compte des lignes de résultat : pour un client sans commande, il trouve la ligne créée par le LEFT JOIN et renvoie 1.",
+        "COUNT(colonne_de_droite) ne compte que les valeurs présentes : sur cette même ligne, la colonne vaut NULL, et le compte renvoie bien 0.",
+        "C'est la règle du palier 2 sur COUNT(*) et COUNT(colonne), appliquée à un NULL que la jointure a fabriqué plutôt qu'à un NULL présent dans la base.",
+        "Dès qu'un comptage suit un LEFT JOIN, comptez une colonne de la table de droite. Les deux écritures ne diffèrent que par ce qui est entre parenthèses, et pourtant elles répondent à deux questions distinctes."
+      ],
+      exemple: {
+        titre: "1 ou 0, pour le même client",
+        code: "SELECT COUNT(*), COUNT(o.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE c.id = 215;",
+        resultat: "1 et 0 : deux nombres différents, pour un client qui n'a aucune commande.",
+        commentaire: "COUNT(*) voit une ligne et la compte. COUNT(o.id) regarde l'identifiant de commande sur cette ligne, le trouve vide, et ne compte rien. Seul le second répond à « combien de commandes a ce client »."
+      },
+      astuce: "Après avoir écrit COUNT(*) dans une requête qui contient un LEFT JOIN, arrêtez-vous : il y a de fortes chances qu'il faille compter une colonne précise de la table de droite à la place."
+    },
+    exercices: ["p3-19", "p3-20", "p3-21"]
+  },
+  {
+    id: "ch-p3-8", niveau: "P3", titre: "ON ou WHERE : le filtre qui annule le LEFT JOIN", duree: "7 min",
+    resume: "Une condition sur la table de droite change de sens selon sa place : dans le ON elle restreint la correspondance, dans le WHERE elle supprime les lignes gardées.",
+    lecon: {
+      intro: "Voici le piège le plus subtil du palier, parce qu'il ne porte ni sur un mot-clé ni sur une colonne, mais sur une PLACE. La même condition, écrite dans le ON ou dans le WHERE, donne deux résultats différents — et celui du WHERE ressemble à s'y méprendre à ce qu'aurait donné une jointure ordinaire.",
+      points: [
+        "Le ON définit ce qui se RELIE : une condition qu'il porte décide quelles lignes de droite viennent se coller à chaque ligne de gauche. Celles de gauche restent toutes là.",
+        "Le WHERE décide ce qui est GARDÉ, et s'applique APRÈS la jointure, sur son résultat.",
+        "Une ligne sans correspondance a ses colonnes de droite à NULL : toute condition du WHERE portant sur ces colonnes est alors non vraie, et la ligne est éliminée.",
+        "Résultat : un WHERE sur la table de droite annule le LEFT JOIN. Pour filtrer sans perdre les lignes de gauche, la condition doit rejoindre le ON."
+      ],
+      exemple: {
+        titre: "46 ou 59 lignes, pour une seule différence",
+        code: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id AND o.statut = 'livree';",
+        resultat: "59 lignes : 46 commandes livrées, plus 13 clients sans aucune commande livrée.",
+        commentaire: "La même condition déplacée dans un WHERE ne renvoie que 46 lignes : les 13 clients sans commande livrée ont été éliminés, parce que leur statut valait NULL. Le LEFT JOIN était pourtant bien écrit — c'est le WHERE qui l'a défait."
+      },
+      astuce: "Règle simple : une condition qui porte sur la table de droite d'un LEFT JOIN va dans le ON. Une condition qui porte sur la table de gauche va dans le WHERE, où elle ne pose aucun problème."
+    },
+    exercices: ["p3-22", "p3-23", "p3-24"]
+  },
+  {
+    id: "ch-p3-9", niveau: "P3", titre: "L'anti-jointure sur tout le catalogue", duree: "5 min",
+    resume: "La même forme répond partout : produits jamais commandés, rayon vide, client sans commande — seules les tables changent.",
+    lecon: {
+      intro: "L'anti-jointure a été vue sur les clients ; elle vaut partout où une table en pointe une autre. Ce chapitre la rejoue sur le catalogue, pour qu'elle devienne une forme reconnue plutôt qu'une requête à redécouvrir à chaque fois.",
+      points: [
+        "Un produit jamais commandé n'est cité par aucune ligne de lignes_commande : LEFT JOIN depuis produits, puis WHERE l.produit_id IS NULL.",
+        "Une catégorie vide n'est désignée par aucun produit : LEFT JOIN depuis categories, puis WHERE p.id IS NULL. Le sens de lecture est le même, un cran plus haut.",
+        "Dans les deux cas, la table à préserver — celle dont on cherche les éléments orphelins — s'écrit à gauche.",
+        "« Jamais commandé » et « jamais vendu » ne sont pas la même question : un produit peut figurer dans une commande qui a été annulée. La première se lit par l'anti-jointure, la seconde demanderait en plus de regarder le statut de la commande."
+      ],
+      exemple: {
+        titre: "Cinq produits sur trente",
+        code: "SELECT p.nom FROM produits p LEFT JOIN lignes_commande l ON l.produit_id = p.id WHERE l.produit_id IS NULL;",
+        resultat: "5 lignes : Tapis de bain, Robot pâtissier, Vélo d'appartement, Atlas du monde, Puzzle 1000 pièces.",
+        commentaire: "Aucune colonne de la table produits ne dit « jamais vendu » : l'information n'existe nulle part, elle se déduit du vide laissé par la jointure. C'est ce qui rend cette forme irremplaçable."
+      },
+      astuce: "Devant une question en « jamais », « aucun » ou « sans », demandez-vous quelle table pointe quelle autre : la table à préserver va à gauche, et le IS NULL se teste sur la clé primaire de celle de droite."
+    },
+    exercices: ["p3-25", "p3-26", "p3-27", "p3-28"]
+  },
+  {
+    id: "ch-p3-10", niveau: "P3", titre: "Enchaîner trois tables", duree: "6 min",
+    resume: "Les jointures s'enchaînent en suivant les clés étrangères ; aller vers une table pointée n'ajoute jamais de lignes.",
+    lecon: {
+      intro: "Rien de nouveau pour relier trois tables : on ajoute un JOIN et son ON, et on recommence. Le chemin à suivre est celui des flèches de la carte des relations. La seule chose à surveiller reste la même qu'avec deux tables — le sens dans lequel chaque fil est tendu, parce que lui seul décide du nombre de lignes.",
+      points: [
+        "Chaque JOIN a son propre ON : une jointure ne se devine jamais, même quand les précédentes sont écrites.",
+        "Aller vers une table POINTÉE (une ligne de commande → son produit) n'ajoute pas de lignes : chaque ligne trouve une seule correspondance.",
+        "Aller vers une table qui POINTE (une commande ← ses lignes) multiplie les lignes : c'est là, et seulement là, que le compte change.",
+        "Dès que deux tables du chemin ont une colonne de même nom — nom, id —, nommez les colonnes du résultat avec AS : sinon, deux colonnes homonymes se succèdent sans qu'on puisse les distinguer."
+      ],
+      exemple: {
+        titre: "De la commande au produit, en passant par le client",
+        code: "SELECT c.nom AS client, p.nom AS produit FROM commandes o JOIN clients c ON c.id = o.client_id JOIN lignes_commande l ON l.commande_id = o.id JOIN produits p ON p.id = l.produit_id WHERE o.id = 1038;",
+        resultat: "4 lignes : le nom du client, répété, à côté de chacun des 4 produits de sa commande.",
+        commentaire: "Trois jointures, trois ON, chacun avec sa propre colonne. Le client apparaît quatre fois : c'est le passage par lignes_commande, du côté « plusieurs », qui a multiplié les lignes — pas le nombre de tables."
+      },
+      astuce: "Écrivez une jointure à la fois et exécutez : si le nombre de lignes bondit à l'ajout d'un JOIN, vous venez de passer du côté « plusieurs », et tout total calculé ensuite sur les tables précédentes sera gonflé."
+    },
+    exercices: ["p3-29", "p3-30", "p3-31", "p3-32"]
+  },
+  {
+    id: "ch-p3-11", niveau: "P3", titre: "Le prix facturé n'est pas le prix d'aujourd'hui", duree: "5 min",
+    resume: "Une ligne de commande garde le prix payé ; le catalogue porte le prix actuel. Les confondre réécrit l'histoire.",
+    lecon: {
+      intro: "Les deux tables contiennent un prix, et ce n'est pas une erreur de conception : lignes_commande.prix_unitaire est le prix FACTURÉ au moment de la commande, produits.prix est le prix AFFICHÉ aujourd'hui. Une fois les tables jointes, les deux colonnes sont disponibles côte à côte — et choisir la mauvaise recalcule le passé aux tarifs du jour.",
+      points: [
+        "Un prix figé sur la ligne de commande n'est pas une redondance : c'est la trace de ce qui a réellement été payé, et il ne doit jamais changer.",
+        "Tout montant historique — le total d'une commande, un chiffre d'affaires — se calcule avec prix_unitaire.",
+        "Le prix du catalogue ne sert qu'aux questions sur le présent : ce que coûte un article aujourd'hui, la valeur du stock actuel.",
+        "Sur cette base, 22 lignes de commande sur 142 ont été facturées à un autre prix que celui affiché aujourd'hui : l'écart est réel, et toutes sont antérieures à octobre 2025."
+      ],
+      exemple: {
+        titre: "479,00 € hier, 449,00 € aujourd'hui",
+        code: "SELECT l.prix_unitaire, p.prix, p.nom FROM lignes_commande l JOIN produits p ON p.id = l.produit_id WHERE l.commande_id = 1004;",
+        resultat: "Une tablette facturée 479,00 € alors que le catalogue affiche 449,00 €.",
+        commentaire: "Le montant de cette commande vaut 498,50 € avec les prix facturés, 468,50 € avec ceux d'aujourd'hui. Les deux requêtes s'exécutent sans erreur ; une seule dit la vérité sur ce que le client a payé."
+      },
+      astuce: "Quand deux tables jointes offrent deux colonnes au nom voisin, demandez-vous laquelle témoigne d'un moment passé. C'est presque toujours celle qui est stockée au plus près de l'événement."
+    },
+    exercices: ["p3-33", "p3-34", "p3-35"]
+  },
+  {
+    id: "ch-p3-12", niveau: "P3", titre: "Le chiffre d'affaires, enfin calculable", duree: "6 min",
+    resume: "La jointure donne accès au statut : le chiffre d'affaires produits de toute la boutique devient calculable — à condition de dire lequel on veut.",
+    lecon: {
+      intro: "Au palier 2, cette question ne pouvait porter que sur une commande à la fois : le montant est dans lignes_commande, le statut dans commandes, et rien ne permettait de les réunir. La jointure lève cet obstacle. Elle ne lève pas l'ambiguïté du mot « chiffre d'affaires », qui reste entière — et qui vaut ici près de 5 000 € d'écart selon la définition retenue.",
+      points: [
+        "Le chiffre d'affaires PRODUITS additionne quantite × prix_unitaire pour les commandes qui ne sont ni annulées ni retournées : 12 387,00 €.",
+        "La jointure ne sert ici qu'à filtrer : aucune colonne de commandes n'est affichée, mais c'est elle qui porte le statut.",
+        "Le SUM porte sur une colonne de lignes_commande, du côté « plusieurs » : rien n'est gonflé, le calcul est juste.",
+        "Sans filtre sur le statut, le même calcul renvoie 16 233,50 € : les commandes annulées et retournées sont alors comptées comme les autres."
+      ],
+      exemple: {
+        titre: "Quatre réponses pour une seule question",
+        code: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee');",
+        resultat: "12 387,00 € : le chiffre d'affaires produits de la boutique.",
+        commentaire: "Livrées seules, le total tombe à 11 490,00 € ; hors annulées, il monte à 12 724,50 € ; tous statuts confondus, à 16 233,50 €. Aucune de ces réponses n'est fausse : elles répondent à des questions différentes, que le mot seul ne distingue pas."
+      },
+      astuce: "Avant de calculer un montant, écrivez noir sur blanc les statuts retenus et le sort des frais de port. Un chiffre d'affaires dont la définition n'est pas énoncée ne peut être vérifié par personne."
+    },
+    exercices: ["p3-36", "p3-37", "p3-38"]
+  },
+  {
+    id: "ch-p3-13", niveau: "P3", titre: "Les frais de port, une seule fois par commande", duree: "6 min",
+    resume: "Ajouter les frais de port dans un SUM calculé sur les lignes les compte une fois par produit : 12 911,50 € au lieu de 12 619,00 €.",
+    lecon: {
+      intro: "Le chiffre d'affaires TOTAL ajoute les frais de port au chiffre d'affaires produits. L'opération a l'air anodine, et c'est le dernier piège du palier : les frais appartiennent à la commande, pas à ses lignes, et toute addition faite après la jointure les compte une fois par produit.",
+      points: [
+        "frais_port vaut une seule fois par commande, quel que soit son nombre d'articles : c'est une colonne de commandes.",
+        "Écrits à l'intérieur d'un SUM calculé sur les lignes, les frais sont recopiés sur chaque ligne et additionnés autant de fois : 12 911,50 € au lieu de 12 619,00 €.",
+        "La bonne méthode, à ce stade, est de calculer les deux totaux séparément — 12 387,00 € de produits d'un côté, 232,00 € de frais de l'autre — puis de les additionner.",
+        "Les obtenir en une seule requête demande d'agréger avant de joindre, ce qui suppose les sous-requêtes du palier 4. Ce n'est pas une limite de SQL, seulement du chemin parcouru."
+      ],
+      exemple: {
+        titre: "232,00 €, sans aucune jointure",
+        code: "SELECT SUM(frais_port) FROM commandes WHERE statut NOT IN ('annulee','retournee');",
+        resultat: "232,00 € : les frais de port des commandes retenues, chacune comptée une fois.",
+        commentaire: "Aucune jointure ici, et c'est précisément ce qui rend le calcul juste : frais_port et statut sont tous deux dans commandes. Ajouté aux 12 387,00 € de produits, ce total donne le chiffre d'affaires TOTAL, 12 619,00 €."
+      },
+      astuce: "Le réflexe à garder de tout ce palier tient en une question : cette colonne appartient-elle à la table que je suis en train de parcourir ? Si non, elle sera comptée plusieurs fois."
+    },
+    exercices: ["p3-39", "p3-40", "p3-41"]
+  },
+  {
+    id: "ch-p3-14", niveau: "P3", titre: "Une table jointe à elle-même : le parrainage", duree: "6 min",
+    resume: "clients.parrain_id pointe vers clients : deux alias suffisent à faire jouer à la même table deux rôles différents.",
+    lecon: {
+      intro: "Une clé étrangère ne désigne pas toujours une autre table. Dans clients, la colonne parrain_id contient l'identifiant d'un autre client : la table se pointe elle-même. Relier un filleul à son parrain demande alors de lire clients deux fois dans la même requête — une fois dans chaque rôle.",
+      points: [
+        "La syntaxe ne change pas : c'est un JOIN ordinaire, avec son ON. Seul le nom de la table de droite est identique à celui de gauche.",
+        "Les deux alias deviennent obligatoires, et ils portent le sens : c pour le filleul, p pour le parrain. Sans eux, nom ne désignerait rien de précis.",
+        "Neuf clients sur quarante ont un parrain. Une jointure ordinaire renvoie donc 9 lignes : les 31 dont parrain_id est vide n'ont aucune correspondance.",
+        "Un parrain_id vide ne correspond à rien, pas même à un autre parrain_id vide : NULL n'est jamais égal à quoi que ce soit, y compris à lui-même."
+      ],
+      exemple: {
+        titre: "Deux lectures de la même table",
+        code: "SELECT c.nom AS filleul, p.nom AS parrain FROM clients c JOIN clients p ON p.id = c.parrain_id;",
+        resultat: "9 lignes : chaque client parrainé, en face du nom de son parrain.",
+        commentaire: "c et p désignent la même table, lue dans deux rôles distincts. Avec LEFT JOIN, le résultat compterait 40 lignes, les 31 clients sans parrain apparaissant avec un parrain vide."
+      },
+      astuce: "Devant une colonne qui pointe vers sa propre table — un parrain, un responsable, une catégorie parente —, nommez les deux rôles avant d'écrire la requête : la nommer correctement, c'est déjà l'avoir résolue."
+    },
+    exercices: ["p3-42", "p3-43", "p3-44", "p3-45"]
   }
 ];
 
@@ -1690,7 +2693,7 @@ const CHAPITRES = [
    ses deux contrôles de couverture d'un avertissement à un échec bloquant pour ce palier. */
 const PALIERS = [
   { id: "P1", titre: "Lire", termine: true },
-  { id: "P2", titre: "Agréger", termine: false },
+  { id: "P2", titre: "Agréger", termine: true },
   { id: "P3", titre: "Croiser", termine: false },
   { id: "P4", titre: "Raisonner", termine: false },
   { id: "P5", titre: "Métier", termine: false }
@@ -1711,6 +2714,8 @@ const CLAUSES = {
   "DISTINCT": { syntaxe: "SELECT DISTINCT colonne FROM table", aide: "ne garde qu'un exemplaire de chaque valeur : les doublons sont retirés" },
   "AS": { syntaxe: "SELECT expression AS alias", aide: "donne un nom à une colonne calculée ou renommée, pour la lire plus facilement" },
   "GROUP BY": { syntaxe: "SELECT colonne, COUNT(*) FROM table GROUP BY colonne", aide: "regroupe les lignes qui ont la même valeur, pour calculer une valeur par groupe" },
+  "JOIN": { syntaxe: "… FROM a JOIN b ON b.cle = a.id", aide: "relie deux tables et ne garde que les lignes qui ont une correspondance des deux côtés" },
+  "ON": { syntaxe: "… FROM a JOIN b ON b.cle = a.id", aide: "dit comment les deux tables se correspondent ; sans lui, chaque ligne de a est associée à chacune de b" },
   "LEFT JOIN": { syntaxe: "… FROM a LEFT JOIN b ON b.cle = a.id", aide: "garde toutes les lignes de a, même sans correspondance dans b (les colonnes de b valent alors NULL)" },
   "COUNT": { syntaxe: "COUNT(*) ou COUNT(colonne)", aide: "COUNT(*) compte les lignes ; COUNT(colonne) ne compte que les valeurs renseignées (non NULL)" },
   "SUM": { syntaxe: "SUM(colonne)", aide: "additionne les valeurs non NULL d'une colonne numérique, sur les lignes concernées" },
@@ -1882,6 +2887,27 @@ const FICHES = {
     contexte: "Indispensable pour regrouper ou filtrer par année ou par mois : strftime('%Y', colonne), strftime('%Y-%m', colonne).",
     erreur: "Comparer son résultat à un nombre sans apostrophes (= 2025 au lieu de = '2025') : strftime renvoie toujours du texte, la comparaison à un nombre ne trouve silencieusement rien.",
     voirAussi: ["GROUP BY", "WHERE"],
+    entrainements: []
+  },
+  "JOIN": {
+    but: "Lire deux tables à la fois en les reliant par la colonne qui les met en correspondance, pour afficher ensemble des informations qui vivent dans des tables différentes.",
+    contexte: "Dès qu'une question mêle deux sujets — le NOM du client (table clients) et la DATE de sa commande (table commandes) —, aucune table ne suffit seule : c'est le moment de joindre.",
+    erreur: "Oublier le ON : les deux tables sont alors associées ligne à ligne dans toutes les combinaisons possibles, ce qui produit un résultat énorme et faux, sans aucun message d'erreur.",
+    voirAussi: ["ON", "LEFT JOIN", "COUNT"],
+    entrainements: []
+  },
+  "ON": {
+    but: "Déclarer la condition qui met en correspondance les lignes de deux tables jointes : presque toujours la clé étrangère de l'une contre la clé primaire de l'autre.",
+    contexte: "S'écrit juste après JOIN. La carte des relations de l'explorateur donne le ON à écrire : elle montre quelle colonne pointe vers quelle autre.",
+    erreur: "Déplacer dans le WHERE une condition qui limite la table de droite d'un LEFT JOIN : le filtre s'applique alors APRÈS la jointure et élimine les lignes sans correspondance, ce qui transforme silencieusement le LEFT JOIN en jointure ordinaire.",
+    voirAussi: ["JOIN", "LEFT JOIN", "WHERE"],
+    entrainements: []
+  },
+  "LEFT JOIN": {
+    but: "Relier deux tables en gardant TOUTES les lignes de la table de gauche, y compris celles qui n'ont aucune correspondance à droite.",
+    contexte: "La bonne clause dès que la question inclut les cas vides : « tous les clients, même ceux qui n'ont jamais commandé », « chaque produit, avec ses ventes s'il en a ». C'est aussi la façon d'aller chercher ce qui n'existe pas, en gardant ensuite les lignes où la table de droite est restée NULL.",
+    erreur: "Compter avec COUNT(*) après un LEFT JOIN : une ligne sans correspondance existe quand même dans le résultat, et compte donc pour une. COUNT(colonne de la table de droite) renvoie bien 0 pour ces lignes-là.",
+    voirAussi: ["JOIN", "ON", "IS NULL", "COUNT"],
     entrainements: []
   }
 };
