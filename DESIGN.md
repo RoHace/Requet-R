@@ -25,6 +25,7 @@ Aucune ombre floue nulle part. Pas de relief animé au survol : le seul retour d
 - **La progression se lit en cellules** (`.cellules`), pas en barre continue : un segment = une unité de progrès. Vaut pour la maîtrise d'une compétence, un niveau, une série.
 - **`.retour` est le composant unique du verdict**, réutilisé partout (exercice, chapitre, mission, fiche) : il ne se réinvente pas par écran. Son animation d'entrée n'est posée par le JS (`data-frais="1"`) qu'au rendu qui suit une réponse, jamais au montage.
 - **Les cartes de chiffres** sont en libellé-puis-valeur : `.stat__sur` (libellé), `.stat__val` (valeur, en police de titre), `.stat__lib` (précision sous la valeur), puis les cellules s'il y a une proportion à montrer. Accueil et Progression partagent la même carte de niveau.
+- **Un segment épouse ses boutons** dès qu'il n'est pas dans une ligne de réglage (`.segment--libre`, `.schema-onglets`) : barré sur toute la largeur, son contour encre se lit comme un conteneur et non comme une commande.
 - **Aucune illustration décorative.** Le pixel art porté de Classe'R (paysage d'accueil, vignettes de chapitre) a été retiré au lot 7 ; ne pas en réintroduire.
 - **Rédaction des tuiles et des cartes d'accès** : une description répond à « qu'est-ce que ça me coûte ? » ou « qu'est-ce que ça me permet ? », jamais à « comment c'est fait ? ».
 

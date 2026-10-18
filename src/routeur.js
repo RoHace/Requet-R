@@ -65,7 +65,7 @@ const Contenu = {
   selecteur(surChangement) {
     const niv = Store.etat.reglages.niveauContenu || "tout";
     const choisir = v => { Store.modifier(e => { e.reglages.niveauContenu = v; }); surChangement(); };
-    return el("div.segment", { role: "group", "aria-label": "Filtrer par palier" },
+    return el("div.segment.segment--libre", { role: "group", "aria-label": "Filtrer par palier" },
       el("button", { type: "button", "aria-pressed": String(niv === "tout"), onclick: () => choisir("tout") }, "Tous"),
       PALIERS.map(p => el("button", { type: "button", "aria-pressed": String(niv === p.id), onclick: () => choisir(p.id) }, p.titre)));
   }

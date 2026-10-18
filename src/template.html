@@ -220,7 +220,9 @@ input[type="text"],input[type="search"],input[type="number"],input:not([type]),s
 }
 .lexique__tete{display:flex; align-items:baseline; gap:10px; margin-bottom:13px}
 .lexique__tete h2{flex:1}
-.lexique__liste{overflow-y:auto; flex:1; min-height:0; margin-top:2px}
+/* Les lignes cliquables débordent de 8 px de chaque côté (`.fn-ligne--lien`, pour une zone de survol
+   plus large) : la liste leur réserve ce débord en marge intérieure, sinon elle défile horizontalement. */
+.lexique__liste{overflow-y:auto; flex:1; min-height:0; margin-top:2px; padding:0 8px}
 .lexique__groupe{
   font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--texte-3);
   font-weight:650; padding:14px 0 5px; position:sticky; top:0; background:var(--surface);
@@ -401,6 +403,9 @@ a{color:var(--accent-fort); text-decoration:none}
 .segment button{padding:5px 12px; border-radius:5px; font-size:13px; font-weight:550; color:var(--texte-2)}
 .segment button[aria-pressed="true"]{background:var(--surface); color:var(--texte); box-shadow:var(--ombre)}
 .segment button:disabled{opacity:.5; cursor:default}
+/* Hors ligne de réglage, le segment épouse ses boutons : barré sur toute la largeur, son contour encre
+   se lirait comme un conteneur plutôt que comme une commande. */
+.segment--libre,.schema-onglets{width:max-content; max-width:100%}
 
 .certifs{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px}
 .certif{padding:14px; border-radius:var(--r); border:1px solid var(--bord); background:var(--surface); opacity:.5}
