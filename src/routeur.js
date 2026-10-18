@@ -71,45 +71,6 @@ const Contenu = {
   }
 };
 
-/* ── Illustrations (Illus, portées de Classe'R : paysage d'accueil, vignettes de chapitre) ─────── */
-const Illus = (() => {
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = (tag, attrs = {}, ...enfants) => {
-    const n = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-    enfants.forEach(c => n.append(c));
-    return n;
-  };
-  return {
-    paysage() {
-      const L = 400, H = 118;
-      const colline = (base, decal, teinte) => {
-        const g = svg("g", {});
-        for (let x = -20; x < L; x += 22) {
-          const h = Math.max(10, base + Math.round(Math.sin((x + decal) / 46) * 10));
-          g.append(svg("rect", { x, y: H - h, width: 24, height: h + 12, fill: teinte }));
-        }
-        return g;
-      };
-      return svg("svg", { class: "paysage", viewBox: `0 0 ${L} ${H}`, "aria-hidden": "true", focusable: "false" },
-        svg("rect", { x: 0, y: 0, width: L, height: H, fill: "var(--ciel)" }),
-        svg("rect", { x: L - 90, y: 16, width: 26, height: 26, fill: "var(--accent)" }),
-        colline(70, 0, "var(--violet)"),
-        colline(40, 120, "var(--prairie)"));
-    },
-    vignette(i) {
-      const t = ["var(--g1)", "var(--g2)", "var(--g3)", "var(--g4)"][i % 4];
-      const motifs = [
-        () => [svg("rect", { x: 1, y: 1, width: 10, height: 3, fill: t }), svg("rect", { x: 1, y: 6, width: 10, height: 3, fill: t })],
-        () => [[1, 1], [7, 1], [1, 7], [7, 7]].map(([x, y]) => svg("rect", { x, y, width: 4, height: 4, fill: t })),
-        () => [svg("rect", { x: 4.5, y: 1, width: 3, height: 10, fill: t }), svg("rect", { x: 1, y: 4.5, width: 10, height: 3, fill: t })],
-        () => [3, 6, 9].map((h, idx) => svg("rect", { x: 1 + idx * 4, y: 12 - h, width: 3, height: h, fill: t }))
-      ];
-      return svg("svg", { class: "vignette", viewBox: "0 0 12 12", "aria-hidden": "true", focusable: "false" }, ...motifs[i % motifs.length]());
-    }
-  };
-})();
-
 /* ── Affichage : constat + XP + progression par compétence, carteRetour fond carteVerdict (lot 3) dedans ──── */
 
 /** `clausesDe(ex)` remplace `fonctionsDe` de Classe'R : les exercices SQL portent déjà leur clause principale
@@ -512,30 +473,33 @@ Vues.accueil = () => {
   const xpJour = Progression.xpDuJour();
   const exporteDepuis = Store.etat.dernierExport ? (Date.now() - new Date(Store.etat.dernierExport).getTime()) / 86400000 : Infinity;
   const reprendre = () => { Parcours.ouvrir(prochain.id); Routeur.aller("/lecons"); };
+  const jours = Store.etat.serie.jours;
+  const libSerie = jours <= 1 ? "jour de pratique" : "jours d'affilée";
   return el("div.vue", {},
-    el("div.accueil__banniere", {},
-      Illus.paysage(),
-      el("div.accueil__mot", {},
-        el("h1", {}, `Bonjour${Store.etat.profil.prenom ? ", " + Store.etat.profil.prenom : ""}`),
-        el("p.muet", { style: "font-size:14px;margin-top:5px" }, "On apprend le SQL en écrivant des requêtes, pas en lisant des cours."),
+    el("header.accueil", {},
+      el("span.puce.puce--serie", {}, `${jours} ${libSerie}`),
+      el("div.accueil__tete", {},
+        el("div.accueil__mot", {},
+          el("h1", {}, `Bonjour${Store.etat.profil.prenom ? ", " + Store.etat.profil.prenom : ""} !`),
+          el("p.muet", {}, prochain
+            ? `Prochain arrêt : ${prochain.titre}.`
+            : "Tous les chapitres sont terminés. Les exercices et les missions vous attendent pour approfondir.")),
         prochain
-          ? el("button.btn.btn--fort", { type: "button", style: "margin-top:14px", onclick: reprendre }, `Continuer : ${prochain.titre}`)
-          : el("p.muet", { style: "font-size:13.5px;margin-top:14px" }, "Tous les chapitres sont terminés. Les exercices et les missions vous attendent pour approfondir."))),
-    el("div.carte", {},
-      el("div", { style: "display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px" },
-        el("div", {}, el("h2", {}, `Niveau ${niv.niveau}`), el("div.tres-muet", { style: "font-size:13px" }, niv.titre)),
-        el("div.mono.muet", { style: "font-size:13px" }, `${niv.xpDansNiveau} / ${niv.xpRequis} XP`)),
-      cellules(niv.pourcent, 20)),
-    el("div.grille.grille--2", { style: "margin-top:14px" },
+          ? el("button.btn.btn--fort", { type: "button", onclick: reprendre }, `Continuer : ${prochain.titre}`)
+          : null)),
+    el("div.grille.grille--3", {},
       el("div.carte.stat", {},
+        el("div.stat__sur", {}, "Niveau"),
+        el("div.stat__val", {}, niv.niveau),
+        el("div.stat__lib", {}, niv.titre),
+        cellules(niv.pourcent, 10)),
+      el("div.carte.stat", {},
+        el("div.stat__sur", {}, "XP aujourd'hui"),
         el("div.stat__val", {}, `${xpJour} / ${PROGRESSION_CONFIG.objectifQuotidien}`),
-        el("div.stat__lib", {}, "XP aujourd'hui"),
-        el("div", { style: "margin-top:10px" }, cellules(Math.min(100, xpJour / PROGRESSION_CONFIG.objectifQuotidien * 100), 12, true))),
+        cellules(Math.min(100, xpJour / PROGRESSION_CONFIG.objectifQuotidien * 100), 10)),
       el("div.carte.stat", {},
-        el("div.stat__val", {}, Store.etat.serie.jours),
-        el("div.stat__lib", {}, Store.etat.serie.jours <= 1 ? "jour de pratique" : "jours d'affilée"))),
-    el("div.grille.grille--2", {},
-      el("div.carte.stat", {}, el("div.stat__val", {}, Object.values(Store.etat.exercices).reduce((n, h) => n + h.reussites, 0)), el("div.stat__lib", {}, "exercices réussis"))),
+        el("div.stat__sur", {}, libSerie),
+        el("div.stat__val", {}, jours))),
     Store.etat.xp >= 100 && exporteDepuis > 7
       ? el("div.note", {}, "Vous n'avez pas exporté votre progression depuis plus de 7 jours : elle ne vit que sur cet appareil (Réglages → Exporter).")
       : null,
@@ -798,7 +762,7 @@ function ecranListeChapitres(rafraichir) {
           const a = Parcours.avancement(ch), fini = a.total > 0 && a.faits === a.total;
           return el("button.carte.chapitre" + (fini ? ".chapitre--fini" : ""), { type: "button", onclick: () => { Parcours.ouvrir(ch.id); rafraichir(); } },
             el("div.chapitre__tete", {},
-              el("span.chapitre__num", {}, Illus.vignette(i), String(i + 1).padStart(2, "0")),
+              el("span.chapitre__num", {}, String(i + 1).padStart(2, "0")),
               el("div", { style: "flex:1" }, el("h3", {}, ch.titre), el("p.chapitre__resume", {}, ch.resume)),
               fini ? el("span.chapitre__coche", {}, "✓") : null),
             el("div.chapitre__pied", {},

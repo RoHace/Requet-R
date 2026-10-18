@@ -30,7 +30,9 @@
 
   // ── Route par défaut : #/accueil (D047) ──
   ok("démarrage : écran d'accueil par défaut", location.hash === "" || location.hash === "#/accueil", location.hash);
-  ok("accueil : bannière et niveau affichés", !!document.querySelector(".accueil__banniere") && /Niveau 1/.test(document.body.innerText));
+  ok("accueil : en-tête, niveau affiché, aucune illustration en blocs",
+    !!document.querySelector(".accueil__tete") && /Niveau/.test(document.body.innerText)
+    && !document.querySelector(".paysage, .vignette"));
 
   // ── Navigation sur toutes les routes du rail (D047) ──
   for (const [chemin, attendu] of [

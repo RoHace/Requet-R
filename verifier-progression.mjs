@@ -379,7 +379,9 @@ proteger("SE-04", "Session.suivant() passe en bilan après la dernière question
   const n = Session.courante.liste.length;
   for (let i = 0; i < n; i++) {
     const ex = Session.courante.liste[i];
-    const rep = ex.type === "qcm" ? ex.reponse : ex.type === "predire" ? String(Attendus.predire(ex).nbLignes) : ex.solution;
+    const rep = ex.type === "qcm" ? ex.reponse
+      : ex.type === "predire" ? String(ex.predit === "nbLignes" ? Attendus.predire(ex).nbLignes : Attendus.predire(ex).valeur)
+      : ex.solution;
     Session.repondre(rep);
     Session.suivant();
   }

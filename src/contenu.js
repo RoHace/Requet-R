@@ -673,6 +673,603 @@ const CONTENU = {
       exemple: "AS cout, AS montant ou l'absence d'alias donnent trois requêtes différentes à l'écriture, mais acceptées de la même façon si leurs valeurs sont justes.",
       explication: "Le nom d'une colonne (donné par AS, ou par défaut) n'est vérifié que si l'exercice l'exige explicitement — ce qui n'est jamais le cas dans ce palier. AS sert à rendre une colonne calculée lisible pour vous, pas à satisfaire la correction.",
       retenir: "Le nom d'une colonne n'est vérifié que si l'exercice le demande explicitement ; par défaut, seules la position et la valeur comptent."
+    },
+
+    /* ── Palier 2 (lot 7) : COUNT/SUM/AVG/MIN/MAX, GROUP BY, HAVING, CASE WHEN, fonctions de date ──────────── */
+    {
+      id: "p2-01", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 1,
+      titre: "Ce que change GROUP BY",
+      question: "Une requête calcule une moyenne pour toute la table, en une seule ligne de résultat. Vous ajoutez GROUP BY ville. Qu'est-ce qui change ?",
+      options: [
+        "Le résultat contient désormais une ligne par ville, chacune avec sa propre moyenne",
+        "Le résultat reste une seule ligne, mais ne porte plus que sur la première ville trouvée",
+        "GROUP BY trie le résultat par ville, sans changer le nombre de lignes",
+        "GROUP BY renvoie une erreur si la colonne ville contient des valeurs NULL"
+      ],
+      reponse: 0,
+      piste: "Repensez à la leçon : une fonction d'agrégat renvoie une ligne par groupe, pas une ligne par table.",
+      clause: "GROUP BY",
+      exemple: "SELECT statut, COUNT(*) FROM commandes GROUP BY statut; renvoie une ligne par statut, chacune avec son propre compte.",
+      explication: "GROUP BY ville sépare les lignes en autant de groupes que de villes différentes (NULL compris, qui forme son propre groupe) ; la moyenne — ou toute autre fonction d'agrégat du SELECT — est alors recalculée séparément pour chaque groupe, qui devient une ligne du résultat. Sans GROUP BY, il n'existait qu'un seul groupe : la table entière.",
+      retenir: "GROUP BY colonne transforme un seul résumé global en un résumé par groupe : une ligne de résultat par valeur différente de la colonne."
+    },
+    {
+      id: "p2-02", type: "predire",
+      niveau: "P2", competence: "agreger", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Une seule ligne, quoi qu'il arrive",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ?",
+      requete: "SELECT COUNT(*) FROM clients;",
+      predit: "nbLignes",
+      piste: "COUNT(*) est une fonction d'agrégat ; sans GROUP BY, combien de groupes existe-t-il dans toute la table ?",
+      clause: "COUNT",
+      exemple: "SELECT AVG(prix) FROM produits; renvoie elle aussi une seule ligne, quel que soit le nombre de produits dans la table.",
+      explication: "Une fonction d'agrégat sans GROUP BY résume TOUTE la table en un seul groupe : quel que soit le nombre de lignes de clients (ici 40), le résultat tient toujours sur une seule ligne, celle du résumé. Le nombre affiché par COUNT(*) (40) n'est pas le nombre de lignes du RÉSULTAT : c'est la valeur qu'il contient.",
+      retenir: "Sans GROUP BY, une fonction d'agrégat renvoie toujours exactement une ligne, quelle que soit la taille de la table résumée."
+    },
+    {
+      id: "p2-03", type: "requete",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Le nombre total de commandes",
+      question: "Combien de commandes la boutique a-t-elle enregistrées, en tout ?",
+      consigne: "Une seule valeur : le nombre total de commandes.",
+      solution: "SELECT COUNT(*) FROM commandes",
+      comparer: {},
+      piste: "COUNT(*) compte les lignes d'une table, sans se soucier de leur contenu.",
+      clause: "COUNT",
+      exemple: "SELECT COUNT(*) FROM produits; compte les 30 produits du catalogue.",
+      explication: "COUNT(*) compte toutes les lignes de la table commandes, quelle que soit la valeur de leurs colonnes : 70.",
+      retenir: "COUNT(*) compte les lignes d'une table (ou d'un résultat filtré par WHERE), sans regarder leur contenu."
+    },
+    {
+      id: "p2-04", type: "corriger",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Combien de clients ont renseigné leur ville ?",
+      question: "Combien de clients ont une ville renseignée ?",
+      consigne: "Une seule valeur : le nombre de clients dont la ville n'est pas manquante.",
+      depart: "SELECT COUNT(*) FROM clients",
+      solution: "SELECT COUNT(ville) FROM clients",
+      comparer: {},
+      pieges: ["P3"],
+      piste: "COUNT(*) compte les lignes, pas les valeurs d'une colonne précise : il compte aussi les clients dont la ville est manquante.",
+      clause: "COUNT",
+      exemple: "SELECT COUNT(note) FROM commandes; compte les commandes qui ont une note, pas toutes les commandes.",
+      explication: "COUNT(*) compte les lignes de la table, quelle que soit leur contenu : il renvoie 40, le nombre total de clients, NULL compris. COUNT(ville) ne compte que les lignes où ville n'est pas NULL : il ignore les 4 clients (205, 211, 223, 230) dont la ville est manquante, et renvoie 36. Mettre une colonne précise entre les parenthèses change ce qui est compté.",
+      retenir: "COUNT(*) compte les lignes ; COUNT(colonne) ne compte que les lignes où cette colonne n'est pas NULL. Les deux peuvent donner des résultats différents, et c'est souvent voulu de les comparer."
+    },
+    {
+      id: "p2-05", type: "corriger",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Combien de clients ont une ville, peu importe laquelle",
+      question: "Combien de clients ont une ville renseignée, peu importe laquelle ?",
+      consigne: "Une seule valeur : le nombre de clients dont la ville n'est pas manquante.",
+      depart: "SELECT COUNT(DISTINCT ville) FROM clients",
+      solution: "SELECT COUNT(ville) FROM clients",
+      comparer: {},
+      pieges: ["P3"],
+      piste: "COUNT(DISTINCT colonne) compte des VALEURS différentes, pas des LIGNES : deux clients de la même ville ne comptent qu'une fois.",
+      clause: "COUNT",
+      exemple: "SELECT COUNT(DISTINCT statut) FROM commandes; renvoie 5 : le nombre de statuts différents, pas le nombre de commandes.",
+      explication: "COUNT(DISTINCT ville) ne compte que les villes DIFFÉRENTES, NULL ignoré comme toujours avec COUNT(colonne) : il y a 11 villes différentes dans la table, donc 11 — bien moins que les 36 clients qui ont réellement une ville renseignée. COUNT(ville), sans DISTINCT, compte chaque ligne non NULL une fois, même si plusieurs clients partagent la même ville : 36.",
+      retenir: "COUNT(colonne) compte des lignes non NULL ; COUNT(DISTINCT colonne) compte des valeurs différentes. Les deux ignorent NULL, mais ne répondent pas à la même question."
+    },
+    {
+      id: "p2-06", type: "predire",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Combien de clients ont un parrain",
+      question: "Sans l'exécuter : quelle VALEUR renvoie cette requête ?",
+      requete: "SELECT COUNT(parrain_id) FROM clients;",
+      predit: "valeur",
+      piste: "parrain_id est vide pour un client venu seul, sans parrain.",
+      clause: "COUNT",
+      exemple: "Dans la table clients, 40 lignes au total ; certaines colonnes ont des valeurs manquantes pour certains clients.",
+      explication: "COUNT(parrain_id) ne compte que les clients dont parrain_id n'est pas NULL, c'est-à-dire ceux qui ont effectivement été parrainés : 9 sur 40. Les 31 autres sont venus seuls, parrain_id vide pour eux.",
+      retenir: "COUNT(colonne) répond à « combien de lignes ont une valeur ici », pas à « combien de lignes au total »."
+    },
+    {
+      id: "p2-07", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Le nombre d'unités en stock, toutes références confondues",
+      question: "Combien d'unités de produits reste-t-il en stock, en additionnant toutes les références du catalogue ?",
+      consigne: "Une seule valeur : la somme du stock de tous les produits.",
+      solution: "SELECT SUM(stock) FROM produits",
+      comparer: {},
+      piste: "SUM additionne une colonne numérique sur toutes les lignes concernées.",
+      clause: "SUM",
+      exemple: "SELECT SUM(prix) FROM produits; additionnerait les prix de tous les produits — un total qui n'a pas vraiment de sens commercial, mais qui montre comment SUM fonctionne.",
+      explication: "SUM(stock) additionne la colonne stock de toutes les lignes de produits : 1 199 unités, tous produits confondus. Un seul produit (le tapis de bain, stock 0) n'y contribue pour rien, mais aucune ligne n'est ignorée pour autant — SUM(stock) les additionne toutes, y compris celles qui valent 0.",
+      retenir: "SUM(colonne) additionne une colonne numérique sur toutes les lignes ; une valeur à 0 participe normalement à la somme, seul NULL serait ignoré."
+    },
+    {
+      id: "p2-08", type: "corriger",
+      niveau: "P2", competence: "agreger", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Le total de la commande 1038, et seulement elle",
+      question: "Quel est le total des lignes de la commande 1038 (quantité × prix unitaire) ?",
+      consigne: "Une seule valeur : le total de cette commande, avant frais de port.",
+      depart: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande",
+      solution: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande WHERE commande_id = 1038",
+      comparer: {},
+      piste: "Exécutez la requête de départ : le nombre obtenu est-il plausible pour UNE SEULE commande ?",
+      clause: "WHERE",
+      exemple: "SUM additionne TOUTES les lignes qu'on lui donne : sans filtre, c'est tout lignes_commande, pas une commande en particulier.",
+      explication: "La requête de départ oublie le WHERE : SUM additionne les 142 lignes de TOUTES les commandes de la boutique, et renvoie 16 233,50 — un chiffre qui n'a plus rien à voir avec la commande 1038. SQLite ne signale aucune erreur, puisque la requête est parfaitement valide : elle calcule juste autre chose que ce qui est demandé. WHERE commande_id = 1038 restreint l'addition aux 4 lignes de cette seule commande, pour un total de 102,00 €.",
+      retenir: "SUM (comme toute fonction d'agrégat) additionne exactement les lignes qu'on lui présente : un WHERE oublié ne provoque pas d'erreur, juste un résultat calculé sur le mauvais ensemble de lignes."
+    },
+    {
+      id: "p2-09", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 2,
+      titre: "SUM et les valeurs manquantes",
+      question: "La colonne note de commandes contient 38 valeurs NULL sur 70. Que fait SUM(note) de ces 38 lignes ?",
+      options: [
+        "Il les ignore complètement, comme s'il ne restait que les 32 lignes notées",
+        "Il les compte comme des zéros dans la somme",
+        "Il provoque une erreur dès qu'une seule valeur NULL est rencontrée",
+        "Il arrête le calcul à la première valeur NULL rencontrée"
+      ],
+      reponse: 0,
+      piste: "C'est le même comportement que COUNT(colonne) : une ligne NULL n'existe tout simplement pas pour la fonction.",
+      clause: "SUM",
+      exemple: "AVG(note) vaut 3,75 : si les NULL comptaient comme des zéros, la moyenne serait beaucoup plus basse.",
+      explication: "SUM, comme COUNT(colonne), AVG, MIN et MAX, ignore purement et simplement les lignes NULL : elles ne participent pas au calcul, exactement comme si elles n'existaient pas. SUM(note) additionne uniquement les 32 notes réellement données (total 120), sans qu'aucun des 38 NULL ne compte pour 0.",
+      retenir: "Toutes les fonctions d'agrégat (COUNT(colonne), SUM, AVG, MIN, MAX) ignorent les NULL ; aucune ne les traite comme des zéros."
+    },
+    {
+      id: "p2-10", type: "requete",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Mise en pratique", difficulte: 1,
+      titre: "La note moyenne des commandes notées",
+      question: "Quelle est la note moyenne des commandes qui ont été notées ?",
+      consigne: "Une seule valeur : la note moyenne.",
+      solution: "SELECT AVG(note) FROM commandes",
+      comparer: {},
+      piste: "AVG calcule une moyenne ; demandez-vous sur combien de lignes elle porte vraiment.",
+      clause: "AVG",
+      exemple: "SELECT AVG(prix) FROM produits; donne le prix moyen du catalogue, 165,31 €.",
+      explication: "AVG(note) ignore les 38 commandes sans note et calcule la moyenne des 32 notes restantes : 3,75. Le résultat ne dépend que des lignes effectivement notées, pas des 70 commandes de la table.",
+      retenir: "AVG(colonne) fait la moyenne des valeurs non NULL seulement ; elle divise par le nombre de valeurs présentes, pas par le nombre total de lignes."
+    },
+    {
+      id: "p2-11", type: "corriger",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "La même moyenne, calculée à la main",
+      question: "Quelle est la note moyenne des commandes qui ont été notées ?",
+      consigne: "Une seule valeur : la note moyenne.",
+      depart: "SELECT SUM(note) / COUNT(*) FROM commandes",
+      solution: "SELECT AVG(note) FROM commandes",
+      comparer: {},
+      pieges: ["P3"],
+      piste: "COUNT(*) compte TOUTES les commandes, notées ou pas ; SUM(note), lui, n'additionne que les notes présentes. Diviser l'un par l'autre revient-il à faire une moyenne ?",
+      clause: "AVG",
+      exemple: "SUM(note) vaut 120 ; COUNT(*) vaut 70 ; 120 divisé par 70 ne fait pas 3,75.",
+      explication: "SUM(note) additionne les 32 notes présentes (120), mais COUNT(*) compte les 70 commandes, notées ou non : diviser l'un par l'autre revient à répartir la somme des notes sur un nombre de lignes bien plus grand que celui qui a vraiment été noté, d'où un résultat écrasé (1, une fois la division entière de SQLite prise en compte) au lieu de 3,75. AVG(note) évite ce piège : elle divise par le nombre de notes réellement présentes (32), pas par le nombre total de lignes.",
+      retenir: "AVG(colonne) n'est pas SUM(colonne) / COUNT(*) : AVG divise par le nombre de valeurs non NULL, COUNT(*) compte toutes les lignes sans distinction."
+    },
+    {
+      id: "p2-12", type: "qcm",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Comprendre", difficulte: 2,
+      titre: "Pourquoi AVG et SUM/COUNT(*) divergent",
+      question: "Pourquoi AVG(note) (3,75) et SUM(note) divisé par COUNT(*) ne donnent-ils pas le même résultat sur la table commandes ?",
+      options: [
+        "Parce que COUNT(*) compte les 70 commandes, notées ou non, alors qu'AVG ne divise que par les 32 notes présentes",
+        "Parce que SUM(note) commet une erreur d'arrondi que AVG évite",
+        "Parce que COUNT(*) et SUM(note) ne portent pas sur la même table",
+        "Parce qu'AVG trie les lignes avant de calculer la moyenne"
+      ],
+      reponse: 0,
+      piste: "Combien de lignes COUNT(*) compte-t-il, et combien de notes SUM(note) additionne-t-il réellement ?",
+      clause: "AVG",
+      exemple: "70 commandes au total, mais seulement 32 notées : deux nombres différents, pour deux rôles différents.",
+      explication: "COUNT(*) compte les 70 lignes de la table, notées ou pas ; SUM(note) n'additionne que les 32 notes réellement présentes (120). AVG(note), elle, calcule exactement 120 ÷ 32 = 3,75 : elle divise par le nombre de valeurs qu'elle a additionnées, pas par le nombre de lignes de la table. SUM(note) / COUNT(*) divise par le mauvais nombre.",
+      retenir: "AVG(colonne) = SUM(colonne) / COUNT(colonne), jamais / COUNT(*), dès qu'il existe des NULL dans la colonne."
+    },
+    {
+      id: "p2-13", type: "predire",
+      niveau: "P2", competence: "valeurs-manquantes", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Combien de commandes n'ont pas été notées",
+      question: "Sans l'exécuter : quelle VALEUR renvoie cette requête ?",
+      requete: "SELECT COUNT(*) - COUNT(note) FROM commandes;",
+      predit: "valeur",
+      piste: "COUNT(*) compte tout ; COUNT(note) ne compte que les notes présentes. La différence, c'est ce qui manque.",
+      clause: "COUNT",
+      exemple: "70 commandes en tout, 32 notées : il en manque le reste.",
+      explication: "COUNT(*) vaut 70 (toutes les commandes) ; COUNT(note) vaut 32 (seulement celles qui ont une note) ; leur différence, 38, est le nombre de commandes sans note — exactement l'inverse de ce que compte COUNT(note).",
+      retenir: "COUNT(*) - COUNT(colonne) donne le nombre de lignes où cette colonne est NULL."
+    },
+    {
+      id: "p2-14", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Le prix le plus bas et le plus haut du catalogue",
+      question: "Quel est le prix du produit le moins cher, et celui du produit le plus cher ?",
+      consigne: "Deux colonnes, dans cet ordre : le prix minimum, puis le prix maximum.",
+      solution: "SELECT MIN(prix), MAX(prix) FROM produits",
+      comparer: {},
+      piste: "MIN et MAX s'utilisent exactement comme SUM ou AVG, chacune dans sa propre colonne du SELECT.",
+      clause: "MIN",
+      exemple: "SELECT MIN(stock), MAX(stock) FROM produits; donnerait le stock le plus bas et le plus haut du catalogue.",
+      explication: "MIN(prix) et MAX(prix) parcourent chacune toute la colonne prix et renvoient respectivement la plus petite (3,50 €) et la plus grande (1 299,00 €) valeur trouvée, dans une seule ligne de résultat à deux colonnes.",
+      retenir: "MIN(colonne) et MAX(colonne) renvoient la plus petite et la plus grande valeur d'une colonne ; on peut demander les deux dans le même SELECT."
+    },
+    {
+      id: "p2-15", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 1,
+      titre: "MIN, MAX et les valeurs manquantes",
+      question: "La colonne date_livraison est NULL pour les commandes pas encore livrées. MIN(date_livraison) tient-il compte de ces lignes ?",
+      options: [
+        "Non : comme toutes les fonctions d'agrégat, MIN ignore les NULL et ne regarde que les dates réellement renseignées",
+        "Oui : NULL est considéré comme la date la plus ancienne possible",
+        "Non : MIN provoque une erreur si la colonne contient un NULL",
+        "Oui : NULL est ignoré uniquement si on utilise MAX, pas MIN"
+      ],
+      reponse: 0,
+      piste: "C'est la même règle que pour COUNT(colonne), SUM et AVG.",
+      clause: "MIN",
+      exemple: "MIN(date_livraison) ne regarde que les commandes livrées ou retournées : les 19 autres, sans date, n'y participent pas.",
+      explication: "MIN et MAX suivent la même règle que les autres fonctions d'agrégat : une ligne NULL est purement ignorée, jamais traitée comme une valeur extrême. MIN(date_livraison) ne considère que les commandes qui ont réellement une date de livraison.",
+      retenir: "MIN et MAX ignorent les NULL exactement comme COUNT(colonne), SUM et AVG : aucune fonction d'agrégat ne les traite comme une valeur."
+    },
+    {
+      id: "p2-16", type: "predire",
+      niveau: "P2", competence: "agreger", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Un produit à stock zéro",
+      question: "Sans l'exécuter : quelle VALEUR renvoie cette requête ?",
+      requete: "SELECT COUNT(*) FROM produits WHERE stock = 0;",
+      predit: "valeur",
+      piste: "Au moins un produit du catalogue est en rupture totale ; combien exactement ?",
+      clause: "MIN",
+      exemple: "Les stocks du catalogue vont de 0 à plusieurs dizaines d'unités selon le produit.",
+      explication: "Un seul produit du catalogue (un tapis de bain) a un stock de 0, donc COUNT(*) FROM produits WHERE stock = 0 renvoie 1. C'est ce même 0 que MIN(stock) trouverait comme plus petite valeur de toute la colonne : 0 est une valeur numérique comme une autre, jamais confondue avec un NULL — un NULL aurait été ignoré, par MIN comme par COUNT(colonne).",
+      retenir: "0 est une valeur comme une autre pour MIN, MAX ou une comparaison WHERE = 0 ; elle n'est jamais traitée comme une absence de valeur, contrairement à NULL."
+    },
+    {
+      id: "p2-17", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le nombre de clients par ville",
+      question: "Combien de clients habitent dans chaque ville ?",
+      consigne: "Deux colonnes, dans cet ordre : la ville, puis le nombre de clients ; triées par ville.",
+      solution: "SELECT ville, COUNT(*) FROM clients GROUP BY ville ORDER BY ville",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "GROUP BY sépare les lignes par valeur de la colonne choisie ; COUNT(*) est alors recalculé pour chaque groupe.",
+      clause: "GROUP BY",
+      exemple: "SELECT statut, COUNT(*) FROM commandes GROUP BY statut; donne une ligne par statut de commande.",
+      explication: "GROUP BY ville forme un groupe par valeur différente de ville — NULL compris, qui forme son propre groupe pour les 4 clients sans ville connue — et COUNT(*) compte les lignes de chaque groupe séparément : 12 lignes de résultat en tout (11 villes + le groupe NULL).",
+      retenir: "GROUP BY colonne forme un groupe par valeur différente, NULL compris : une fonction d'agrégat du SELECT est alors recalculée séparément pour chaque groupe."
+    },
+    {
+      id: "p2-18", type: "corriger",
+      niveau: "P2", competence: "agreger", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Le nombre de commandes par statut",
+      question: "Combien de commandes y a-t-il, pour chacun des statuts possibles ?",
+      consigne: "Deux colonnes, dans cet ordre : le statut, puis le nombre de commandes ; triées par statut.",
+      depart: "SELECT statut, COUNT(*) FROM commandes",
+      solution: "SELECT statut, COUNT(*) FROM commandes GROUP BY statut ORDER BY statut",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "Exécutez la requête de départ : combien de lignes renvoie-t-elle ? Est-ce cohérent avec « pour chacun des statuts » ?",
+      clause: "GROUP BY",
+      exemple: "Sans GROUP BY, un SELECT qui mélange une colonne ordinaire et une fonction d'agrégat ne fabrique qu'un seul groupe : toute la table.",
+      explication: "La requête de départ est acceptée par SQLite SANS ERREUR : elle renvoie une seule ligne, avec le COUNT(*) correct (70) mais un statut choisi arbitrairement parmi toutes les lignes de la table — ici livree, parce que c'est la première valeur que rencontre SQLite, sans que cela ait de sens. C'est plus trompeur qu'une erreur : le résultat a l'air valide. GROUP BY statut sépare réellement les commandes en 5 groupes, un par statut, chacun avec son propre compte.",
+      retenir: "Mélanger une colonne ordinaire et une fonction d'agrégat sans GROUP BY ne provoque pas d'erreur dans SQLite : la colonne ordinaire affiche une valeur arbitraire d'une ligne quelconque, à côté d'un agrégat qui, lui, porte sur toute la table."
+    },
+    {
+      id: "p2-19", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Combien de commandes de chaque statut ont une date de livraison",
+      question: "Pour chaque statut, combien de commandes ont une date de livraison renseignée ?",
+      consigne: "Deux colonnes, dans cet ordre : le statut, puis le nombre de commandes avec une date de livraison ; triées par statut.",
+      solution: "SELECT statut, COUNT(date_livraison) FROM commandes GROUP BY statut ORDER BY statut",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "COUNT(colonne) à l'intérieur d'un GROUP BY compte, pour chaque groupe séparément, les valeurs non NULL de cette colonne.",
+      clause: "GROUP BY",
+      exemple: "GROUP BY peut combiner n'importe quelle fonction d'agrégat déjà vue : COUNT(*), COUNT(colonne), SUM, AVG, MIN, MAX se recalculent toutes par groupe.",
+      explication: "COUNT(date_livraison), recalculé pour chaque statut, montre que seules les commandes livree (46) et retournee (5) ont une date de livraison ; les trois autres statuts (annulee, en_preparation, expediee) affichent 0, puisqu'aucune de leurs commandes n'a encore été livrée.",
+      retenir: "N'importe quelle fonction d'agrégat déjà connue (COUNT(colonne), SUM, AVG, MIN, MAX) se combine avec GROUP BY : elle se recalcule simplement pour chaque groupe séparément."
+    },
+    {
+      id: "p2-20", type: "predire",
+      niveau: "P2", competence: "agreger", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Une ligne par statut",
+      question: "Sans l'exécuter : combien de LIGNES renvoie cette requête ?",
+      requete: "SELECT statut, COUNT(*) FROM commandes GROUP BY statut;",
+      predit: "nbLignes",
+      piste: "Combien de statuts différents existent dans la table commandes ?",
+      clause: "GROUP BY",
+      exemple: "5 statuts possibles : en_preparation, expediee, livree, annulee, retournee.",
+      explication: "GROUP BY statut forme un groupe par valeur différente de statut : il y en a exactement 5 dans la table commandes, donc 5 lignes de résultat — quel que soit le nombre de commandes (70) réparties entre elles.",
+      retenir: "Le nombre de lignes d'un résultat GROUP BY est le nombre de valeurs différentes de la colonne groupée, pas le nombre de lignes de la table de départ."
+    },
+    {
+      id: "p2-21", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Les frais de port perçus, statut par statut",
+      question: "Pour chaque statut, quel est le total des frais de port des commandes correspondantes ?",
+      consigne: "Deux colonnes, dans cet ordre : le statut, puis la somme des frais de port ; triées par statut.",
+      solution: "SELECT statut, SUM(frais_port) FROM commandes GROUP BY statut ORDER BY statut",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "C'est la même construction que pour COUNT(date_livraison) : seule la fonction d'agrégat change.",
+      clause: "GROUP BY",
+      exemple: "SUM(frais_port) seule, sans GROUP BY, donnerait un seul total pour toute la boutique : 306,50 €.",
+      explication: "SUM(frais_port), recalculé par statut, montre que même les 11 commandes annulées ont déjà généré 44,00 € de frais de port (ils ont été facturés avant l'annulation) : annulee 44,00, en_preparation 19,50, expediee 24,00, livree 188,50, retournee 30,50 — un total qui retombe bien sur la somme globale de 306,50 €.",
+      retenir: "GROUP BY ne limite pas les fonctions d'agrégat à COUNT : SUM, AVG, MIN, MAX se recalculent toutes aussi bien par groupe, sur n'importe quelle colonne numérique."
+    },
+    {
+      id: "p2-22", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les commandes dont les lignes dépassent 1 000 €",
+      question: "Quelles commandes totalisent plus de 1 000 € sur l'ensemble de leurs lignes (quantité × prix unitaire) ?",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant de la commande, puis le total de ses lignes ; triées par identifiant.",
+      solution: "SELECT commande_id, SUM(quantite * prix_unitaire) AS total FROM lignes_commande GROUP BY commande_id HAVING total > 1000 ORDER BY commande_id",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "HAVING s'écrit après GROUP BY, et porte sur le résultat de la fonction d'agrégat — pas sur une colonne de la table.",
+      clause: "HAVING",
+      exemple: "HAVING COUNT(*) > 3 garderait les groupes d'au moins 4 lignes ; ici, HAVING total > 1000 garde les groupes dont la somme dépasse 1000.",
+      explication: "GROUP BY commande_id forme un groupe par commande et calcule son total ; HAVING total > 1000 ne garde ensuite que les groupes dont CE TOTAL dépasse 1000 — six commandes sur 70, chacune avec un total par commande bien supérieur à ce que n'importe quelle ligne isolée pourrait atteindre.",
+      retenir: "HAVING filtre des GROUPES, après le calcul de la fonction d'agrégat ; il peut porter sur le résultat de SUM, COUNT, AVG… pas seulement sur une colonne brute de la table."
+    },
+    {
+      id: "p2-23", type: "corriger",
+      niveau: "P2", competence: "agreger", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Les commandes dont le total dépasse 1 000 €, vraiment",
+      question: "Quelles commandes totalisent plus de 1 000 € sur l'ensemble de leurs lignes (quantité × prix unitaire) ?",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant de la commande, puis le total de ses lignes ; triées par identifiant.",
+      depart: "SELECT commande_id, SUM(quantite * prix_unitaire) AS total FROM lignes_commande WHERE quantite * prix_unitaire > 1000 GROUP BY commande_id ORDER BY commande_id",
+      solution: "SELECT commande_id, SUM(quantite * prix_unitaire) AS total FROM lignes_commande GROUP BY commande_id HAVING total > 1000 ORDER BY commande_id",
+      comparer: { ordonne: { cles: [0] } },
+      pieges: ["P8"],
+      piste: "WHERE s'applique ligne par ligne, AVANT le regroupement. Une commande peut dépasser 1000 € au total sans qu'aucune de ses lignes, prise seule, ne dépasse 1000 €.",
+      clause: "HAVING",
+      exemple: "La commande 1001 a plusieurs lignes dont aucune ne dépasse 1000 € prise isolément, mais dont le total, lui, dépasse 1000 €.",
+      explication: "La requête de départ filtre avec WHERE quantite * prix_unitaire > 1000 : cette condition s'applique à CHAQUE LIGNE, avant tout regroupement, et élimine les petites lignes avant même de les additionner. Pour la commande 1001, elle ne garde que sa ligne la plus chère (1 249 €) et ignore ses autres lignes, pour un total tronqué à 1 249 — alors que la commande entière, toutes lignes comptées, totalise 1 284 €. Pour la commande 1016, l'écart est similaire : 1 299 € au lieu de 1 306 €. HAVING total > 1000, lui, s'applique APRÈS le calcul du total par commande : il compare le bon nombre, celui qui représente vraiment la commande entière.",
+      retenir: "WHERE filtre des lignes avant le regroupement ; HAVING filtre des groupes après le calcul de l'agrégat. Utiliser WHERE pour une condition qui devrait porter sur le total d'un groupe tronque silencieusement ce total."
+    },
+    {
+      id: "p2-24", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 2,
+      titre: "WHERE et HAVING, dans quel ordre ?",
+      question: "Dans une requête avec GROUP BY, WHERE et HAVING agissent-ils au même moment ?",
+      options: [
+        "Non : WHERE filtre les lignes avant le regroupement, HAVING filtre les groupes après",
+        "Non : HAVING filtre les lignes avant le regroupement, WHERE filtre les groupes après",
+        "Oui : les deux filtrent exactement les mêmes lignes, au même moment",
+        "Oui, mais HAVING ne fonctionne qu'avec COUNT, jamais avec SUM ou AVG"
+      ],
+      reponse: 0,
+      piste: "L'une des deux clauses s'applique forcément avant que les groupes n'existent encore.",
+      clause: "HAVING",
+      exemple: "WHERE statut <> 'annulee' GROUP BY client_id HAVING COUNT(*) > 3 : d'abord on retire les commandes annulées, ensuite on regroupe par client, enfin on garde les clients d'au moins 4 commandes.",
+      explication: "WHERE s'exécute avant le regroupement : il décide quelles LIGNES entrent dans le calcul. HAVING s'exécute après : il décide quels GROUPES, une fois leur agrégat calculé, sont gardés dans le résultat. Un HAVING peut filtrer sur SUM, AVG, MIN, MAX tout autant que sur COUNT.",
+      retenir: "WHERE avant le regroupement (sur des lignes), HAVING après (sur des groupes déjà calculés)."
+    },
+    {
+      id: "p2-25", type: "predire",
+      niveau: "P2", competence: "agreger", categorie: "Prédire le résultat", difficulte: 3,
+      titre: "Une moyenne qui ne tombe pas juste",
+      question: "Sans l'exécuter : quelle VALEUR renvoie cette requête, pour la commande 1023 (3 lignes, 4 articles en tout) ?",
+      requete: "SELECT SUM(quantite) / COUNT(*) FROM lignes_commande WHERE commande_id = 1023;",
+      predit: "valeur",
+      pieges: ["P8"],
+      piste: "4 divisé par 3 ne fait pas un nombre entier. SQLite divise-t-il toujours exactement, comme une calculatrice ?",
+      clause: "HAVING",
+      exemple: "SUM(quantite)/COUNT(*) sur une commande de 2 lignes totalisant 3 articles donnerait 3/2 : affiché 1, pas 1,5.",
+      explication: "SUM(quantite) vaut 4, COUNT(*) vaut 3 : 4 ÷ 3 fait 1,333… en arithmétique réelle, mais SQLite effectue ici une DIVISION ENTIÈRE, parce que SUM(quantite) et COUNT(*) sont tous les deux des entiers. Le résultat affiché est 1, tronqué, pas arrondi : la partie décimale est purement coupée, pas la valeur la plus proche.",
+      retenir: "En SQLite, diviser un entier par un entier tronque le résultat à l'entier inférieur ; pour une vraie division, au moins l'un des deux doit être un nombre à virgule (par exemple CAST(… AS REAL))."
+    },
+    {
+      id: "p2-26", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Trois familles de statuts",
+      question: "Regroupez les commandes en trois familles : « livree » pour les commandes livrées, « perdue » pour celles annulées ou retournées, « en_cours » pour toutes les autres. Combien de commandes dans chaque famille ?",
+      consigne: "Deux colonnes, dans cet ordre : le nom de la famille, puis le nombre de commandes ; triées par nom de famille.",
+      solution: "SELECT CASE WHEN statut = 'livree' THEN 'livree' WHEN statut IN ('annulee', 'retournee') THEN 'perdue' ELSE 'en_cours' END AS famille, COUNT(*) FROM commandes GROUP BY famille ORDER BY famille",
+      comparer: { ordonne: { cles: [0] } },
+      pieges: ["P7"],
+      piste: "CASE WHEN … THEN … WHEN … THEN … ELSE … END se comporte comme une colonne ordinaire : on peut la nommer avec AS, et la GROUP BY.",
+      clause: "CASE WHEN",
+      exemple: "CASE WHEN prix > 100 THEN 'cher' ELSE 'abordable' END classerait chaque produit en deux familles de prix.",
+      explication: "CASE WHEN teste les conditions dans l'ordre et s'arrête à la première qui est vraie : chaque commande livree tombe dans 'livree' (46), chaque annulee ou retournee dans 'perdue' (16), et tout le reste — en_preparation et expediee — dans 'en_cours' via ELSE (8). Une fois nommée par AS, cette colonne calculée se GROUP BY comme n'importe quelle autre.",
+      retenir: "CASE WHEN condition1 THEN valeur1 WHEN condition2 THEN valeur2 ELSE valeur3 END fabrique une colonne calculée, évaluée ligne par ligne, qui peut ensuite servir de clé à un GROUP BY."
+    },
+    {
+      id: "p2-27", type: "corriger",
+      niveau: "P2", competence: "agreger", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Trois familles de statuts, sans en oublier aucune",
+      question: "Regroupez les commandes en trois familles : « livree », « perdue » (annulee ou retournee), « en_cours » (tout le reste). Combien de commandes dans chaque famille ?",
+      consigne: "Deux colonnes, dans cet ordre : le nom de la famille, puis le nombre de commandes ; triées par nom de famille.",
+      depart: "SELECT CASE WHEN statut = 'livree' THEN 'livree' WHEN statut IN ('annulee', 'retournee') THEN 'perdue' END AS famille, COUNT(*) FROM commandes GROUP BY famille ORDER BY famille",
+      solution: "SELECT CASE WHEN statut = 'livree' THEN 'livree' WHEN statut IN ('annulee', 'retournee') THEN 'perdue' ELSE 'en_cours' END AS famille, COUNT(*) FROM commandes GROUP BY famille ORDER BY famille",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "Que vaut CASE WHEN quand AUCUNE des conditions n'est vraie, et qu'il n'y a pas de ELSE pour rattraper le coup ?",
+      clause: "CASE WHEN",
+      exemple: "Une commande en_preparation ne vérifie ni statut = 'livree' ni statut IN ('annulee', 'retournee') : sans ELSE, elle ne reçoit aucune des valeurs prévues.",
+      explication: "Sans ELSE, une ligne qui ne correspond à AUCUN WHEN reçoit NULL — pas d'erreur, juste une valeur manquante. Les 8 commandes en_preparation et expediee tombent toutes dans ce cas, et GROUP BY les réunit dans un groupe NULL au lieu du groupe 'en_cours' attendu : le compte (8) est le même, mais son étiquette ne l'est pas. ELSE 'en_cours' couvre ce cas en donnant une valeur explicite à tout ce qui n'est ni livree, ni annulee, ni retournee.",
+      retenir: "CASE WHEN sans ELSE renvoie NULL pour toute ligne qui ne vérifie aucune condition — un NULL silencieux, qui forme son propre groupe NULL avec GROUP BY, pas une erreur."
+    },
+    {
+      id: "p2-28", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 1,
+      titre: "CASE WHEN sans ELSE",
+      question: "Dans CASE WHEN condition THEN valeur END (sans ELSE), que vaut l'expression pour une ligne qui ne vérifie pas la condition ?",
+      options: [
+        "NULL",
+        "0",
+        "Une chaîne de caractères vide",
+        "SQLite refuse d'exécuter la requête"
+      ],
+      reponse: 0,
+      piste: "ELSE sert justement à remplacer cette valeur par défaut par quelque chose de plus utile.",
+      clause: "CASE WHEN",
+      exemple: "CASE WHEN prix > 1000 THEN 'cher' END vaut NULL pour un produit à 50 €, faute de ELSE.",
+      explication: "Sans ELSE, CASE WHEN se comporte comme un WHEN implicite « sinon, NULL » : toute ligne qui ne vérifie aucune des conditions reçoit NULL, sans qu'aucune erreur ne soit signalée.",
+      retenir: "CASE WHEN … END sans ELSE renvoie NULL par défaut ; ajouter ELSE permet de choisir une valeur explicite à la place."
+    },
+    {
+      id: "p2-29", type: "requete",
+      niveau: "P2", competence: "dates", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Le nombre de commandes par année",
+      question: "Combien de commandes ont été passées en 2025, et combien en 2026 ?",
+      consigne: "Deux colonnes, dans cet ordre : l'année, puis le nombre de commandes ; triées par année.",
+      solution: "SELECT strftime('%Y', date_commande) AS annee, COUNT(*) FROM commandes GROUP BY annee ORDER BY annee",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "strftime('%Y', colonne) extrait l'année d'une date écrite au format AAAA-MM-JJ, sous forme de texte.",
+      clause: "strftime",
+      exemple: "strftime('%m', date_commande) extrairait le mois ; strftime('%Y-%m', date_commande) l'année et le mois ensemble.",
+      explication: "strftime('%Y', date_commande) extrait les 4 premiers caractères de chaque date (l'année), sous forme de texte ; GROUP BY regroupe ensuite par cette valeur extraite. 44 commandes tombent en 2025, 26 en 2026 — un total de 70, cohérent avec le nombre de commandes de la table.",
+      retenir: "strftime('%Y', colonne) extrait l'année d'une date AAAA-MM-JJ ; GROUP BY peut porter directement sur une expression calculée, pas seulement sur une colonne de la table."
+    },
+    {
+      id: "p2-30", type: "corriger",
+      niveau: "P2", competence: "dates", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Combien de commandes en 2025",
+      question: "Combien de commandes ont été passées en 2025 ?",
+      consigne: "Une seule valeur : le nombre de commandes de l'année 2025.",
+      depart: "SELECT COUNT(*) FROM commandes WHERE strftime('%Y', date_commande) = 2025",
+      solution: "SELECT COUNT(*) FROM commandes WHERE strftime('%Y', date_commande) = '2025'",
+      comparer: {},
+      pieges: ["P6"],
+      piste: "strftime renvoie toujours du TEXTE, jamais un nombre. Comparez-vous ce texte à un texte, ou à un nombre ?",
+      clause: "strftime",
+      exemple: "'2025' (texte) et 2025 (nombre) se ressemblent à l'écriture, mais SQLite ne les confond pas forcément dans une comparaison.",
+      explication: "strftime('%Y', date_commande) renvoie toujours une chaîne de texte, comme '2025' — jamais un nombre entier. La comparer à l'entier 2025 (sans apostrophes) ne déclenche aucune erreur, mais ne trouve non plus AUCUNE ligne : SQLite ne convertit pas automatiquement un texte en nombre dans ce genre de comparaison, le résultat est silencieusement 0. Comparer le texte renvoyé par strftime à un AUTRE texte, '2025' entre apostrophes, fonctionne : 44 commandes.",
+      retenir: "strftime renvoie du texte : comparez toujours son résultat à une valeur entre apostrophes ('2025'), jamais à un nombre nu, sous peine d'un résultat vide et silencieux."
+    },
+    {
+      id: "p2-31", type: "corriger",
+      niveau: "P2", competence: "dates", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Combien de commandes chaque mois, sur toute la période",
+      question: "Combien de commandes ont été passées chaque mois, sur toute la période couverte par la boutique (de janvier 2025 à juin 2026) ?",
+      consigne: "Deux colonnes, dans cet ordre : le mois, puis le nombre de commandes ; triées par mois.",
+      depart: "SELECT strftime('%m', date_commande) AS mois, COUNT(*) FROM commandes GROUP BY mois ORDER BY mois",
+      solution: "SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) FROM commandes GROUP BY mois ORDER BY mois",
+      comparer: { ordonne: { cles: [0] } },
+      pieges: ["P6"],
+      piste: "strftime('%m', …) extrait un mois SANS l'année : janvier 2025 et janvier 2026 portent-ils la même valeur '01' ?",
+      clause: "strftime",
+      exemple: "strftime('%Y-%m', …) distingue 2025-01 de 2026-01 ; strftime('%m', …) les confond tous les deux sous '01'.",
+      explication: "La requête de départ extrait le mois SEUL ('01' à '12') : elle ne renvoie que 12 lignes, mais chacune mélange les commandes de janvier 2025 ET de janvier 2026 (et ainsi de suite), puisque la boutique couvre 18 mois sur deux années civiles. strftime('%Y-%m', …) garde l'année ET le mois ensemble ('2025-01', '2026-01', …) : chaque mois de chaque année reste distinct, pour 17 lignes bien séparées — pas 12, et pas 18 non plus (voir le chapitre suivant).",
+      retenir: "Dès que des données couvrent plusieurs années, regrouper par strftime('%m', …) seul mélange silencieusement les mêmes mois d'années différentes : il faut garder l'année dans la clé de regroupement, avec strftime('%Y-%m', …)."
+    },
+    {
+      id: "p2-32", type: "predire",
+      niveau: "P2", competence: "dates", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Deux années, deux lignes",
+      question: "Sans l'exécuter : combien de LIGNES renvoie cette requête ?",
+      requete: "SELECT strftime('%Y', date_commande) AS annee, COUNT(*) FROM commandes GROUP BY annee;",
+      predit: "nbLignes",
+      piste: "Sur combien d'années civiles différentes la boutique a-t-elle enregistré des commandes ?",
+      clause: "strftime",
+      exemple: "Toutes les dates de commande sont comprises entre janvier 2025 et juin 2026.",
+      explication: "Les commandes couvrent exactement deux années civiles, 2025 et 2026 : GROUP BY sur l'année extraite ne peut donc produire que 2 lignes, quel que soit le nombre de commandes (70) réparties entre elles.",
+      retenir: "Le nombre de lignes d'un résultat GROUP BY dépend du nombre de valeurs différentes de la clé de regroupement — ici deux années — jamais du nombre de lignes de départ."
+    },
+    {
+      id: "p2-33", type: "qcm",
+      niveau: "P2", competence: "dates", categorie: "Comprendre", difficulte: 1,
+      titre: "17 lignes, ou 18 ?",
+      question: "La boutique a enregistré des commandes entre janvier 2025 et juin 2026 : 18 mois civils différents sur cette période. Une requête GROUP BY sur l'année et le mois ne renvoie que 17 lignes. Pourquoi ?",
+      options: [
+        "Un de ces 18 mois n'a vu passer aucune commande, et GROUP BY ne fabrique jamais de ligne pour un groupe vide",
+        "La requête contient une erreur qui en a fait disparaître un",
+        "Deux mois ont été fusionnés par erreur dans le même groupe",
+        "SQLite limite GROUP BY à 17 groupes au maximum"
+      ],
+      reponse: 0,
+      piste: "GROUP BY ne regroupe que les lignes QUI EXISTENT dans la table : il ne peut rien dire sur un mois qui n'a aucune ligne du tout.",
+      clause: "GROUP BY",
+      exemple: "Une table sans aucune commande en août 2025 ne peut pas faire apparaître '2025-08' dans un résultat GROUP BY : ce groupe n'existe tout simplement pas.",
+      explication: "Aucune commande n'a été passée en août 2025 : ce mois n'a donc aucune ligne dans la table, et GROUP BY ne peut regrouper que des lignes existantes — il ne fabrique jamais un groupe vide pour un mois sans commande, même si ce mois existe bien dans le calendrier. 17 mois apparaissent, pas 18 : l'absence d'un groupe EST l'information, pas une erreur de calcul.",
+      retenir: "GROUP BY ne peut révéler que des groupes qui ont au moins une ligne : un mois, un statut ou une catégorie sans aucune ligne correspondante n'apparaîtra jamais dans le résultat, même s'il existe dans la réalité."
+    },
+    {
+      id: "p2-34", type: "requete",
+      niveau: "P2", competence: "dates", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Les commandes à cheval sur le nouvel an",
+      question: "Quelles commandes ont été passées le 31 décembre 2025 ou le 1er janvier 2026 ?",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant de la commande, puis sa date ; triées par date.",
+      solution: "SELECT id, date_commande FROM commandes WHERE date_commande IN ('2025-12-31', '2026-01-01') ORDER BY date_commande",
+      comparer: { ordonne: { cles: [1] } },
+      pieges: ["P6"],
+      piste: "Une date au format AAAA-MM-JJ se compare comme n'importe quel texte, avec IN ou avec =.",
+      clause: "IN",
+      exemple: "WHERE date_commande = '2025-12-31' trouverait la commande du dernier jour de 2025, seule.",
+      explication: "IN ('2025-12-31', '2026-01-01') garde les commandes passées à l'une de ces deux dates précises, à un jour d'écart l'une de l'autre mais de part et d'autre de la frontière entre deux années civiles : la commande 1044 (2025-12-31) et la commande 1045 (2026-01-01), qui se suivent directement dans l'ordre chronologique bien qu'elles n'appartiennent pas à la même année.",
+      retenir: "Deux lignes consécutives dans le temps peuvent appartenir à deux groupes différents (deux années, deux mois) dès que leur date franchit une frontière de calendrier."
+    },
+    {
+      id: "p2-35", type: "predire",
+      niveau: "P2", competence: "dates", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Le mois sans aucune commande",
+      question: "Sans l'exécuter : combien de LIGNES renvoie cette requête ?",
+      requete: "SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) FROM commandes WHERE date_commande LIKE '2025-08%' GROUP BY mois;",
+      predit: "nbLignes",
+      zeroLigneAttendu: "Le but de l'exercice est de faire constater qu'août 2025 n'a vu passer aucune commande : WHERE ne garde alors aucune ligne, et GROUP BY n'a rien à regrouper.",
+      pieges: ["P6"],
+      piste: "WHERE filtre d'abord sur août 2025. Reste-t-il une seule commande de ce mois-là pour que GROUP BY ait quelque chose à regrouper ?",
+      clause: "GROUP BY",
+      exemple: "LIKE '2025-08%' garde les dates qui commencent par 2025-08, quel que soit le jour.",
+      explication: "Aucune commande de la boutique n'a été passée en août 2025 : WHERE date_commande LIKE '2025-08%' ne garde donc aucune ligne, et GROUP BY, qui ne peut regrouper que des lignes présentes, ne produit lui non plus aucune ligne de résultat. Zéro n'est pas une erreur ici : c'est exactement ce que révèle le trou d'août, déjà rencontré dans la leçon.",
+      retenir: "Un résultat à zéro ligne n'est pas forcément un signe d'erreur : il peut révéler une vraie absence de données, comme un mois entier sans la moindre commande."
+    },
+    {
+      id: "p2-36", type: "corriger",
+      niveau: "P2", competence: "dates", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Un regroupement par mois, pas par jour",
+      question: "Combien de commandes ont été passées chaque mois, sur toute la période couverte par la boutique ?",
+      consigne: "Deux colonnes, dans cet ordre : le mois, puis le nombre de commandes ; triées par mois.",
+      depart: "SELECT date_commande, COUNT(*) FROM commandes GROUP BY date_commande ORDER BY date_commande",
+      solution: "SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) FROM commandes GROUP BY mois ORDER BY mois",
+      comparer: { ordonne: { cles: [0] } },
+      piste: "GROUP BY date_commande regroupe par JOUR exact, pas par mois : deux commandes du même mois mais de jours différents tombent-elles dans le même groupe ?",
+      clause: "GROUP BY",
+      exemple: "GROUP BY date_commande sépare le 2025-01-06 du 2025-01-14 : deux groupes, même s'ils sont tous les deux en janvier 2025.",
+      explication: "GROUP BY date_commande regroupe par date COMPLÈTE, jour compris : il produit 69 lignes, presque une par commande (un seul jour, par exception, porte deux commandes), ce qui n'a plus rien d'un regroupement par mois. strftime('%Y-%m', date_commande) tronque chaque date à l'année et au mois avant de regrouper : toutes les commandes d'un même mois, quel que soit leur jour exact, tombent alors dans le même groupe — 17 lignes, une par mois réellement représenté.",
+      retenir: "GROUP BY regroupe sur la valeur EXACTE d'une expression : pour regrouper par mois plutôt que par jour, il faut d'abord réduire la date au mois (strftime('%Y-%m', …)), pas regrouper sur la date complète."
+    },
+    {
+      id: "p2-37", type: "requete",
+      niveau: "P2", competence: "agreger", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Le total des lignes de la commande 1038",
+      question: "Quel est le total des lignes de la commande 1038 (quantité × prix unitaire) ?",
+      consigne: "Une seule valeur : ce total, avant tout frais de port.",
+      solution: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande WHERE commande_id = 1038",
+      comparer: {},
+      piste: "C'est exactement la construction du chapitre sur SUM, appliquée à une commande précise.",
+      clause: "SUM",
+      exemple: "La commande 1038 a 4 lignes, de 34, 29, 25 et 14 euros chacune.",
+      explication: "Les 4 lignes de la commande 1038 totalisent 34 + 29 + 25 + 14 = 102,00 €. C'est ce que SCHEMA.md appelle le « chiffre d'affaires produits » de cette commande : la valeur des articles vendus, sans rien d'autre.",
+      retenir: "Le total des lignes d'une commande (quantité × prix unitaire, additionné) correspond à ce qu'on appelle son chiffre d'affaires PRODUITS : la valeur des articles seuls."
+    },
+    {
+      id: "p2-38", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 2,
+      titre: "102,00 €, est-ce ce que le client a payé ?",
+      question: "Le total des lignes de la commande 1038 est de 102,00 €. Cette commande a des frais de port de 6,50 €. Combien le client a-t-il payé en tout ?",
+      options: [
+        "108,50 € : 102,00 € de produits, plus 6,50 € de frais de port",
+        "102,00 € : les frais de port ne sont jamais facturés au client",
+        "95,50 € : les frais de port sont déduits du total des produits",
+        "Impossible à savoir sans connaître le mode de livraison"
+      ],
+      reponse: 0,
+      piste: "« Chiffre d'affaires produits » et « chiffre d'affaires total », dans SCHEMA.md, ne désignent pas la même chose — c'est précisément pour ça que les deux ont un nom différent.",
+      clause: "SUM",
+      exemple: "Une commande à 50,00 € de produits avec 4,50 € de frais de port revient à 54,50 € payés par le client.",
+      explication: "102,00 € est le chiffre d'affaires PRODUITS de la commande 1038 : la valeur de ses articles, frais de port exclu. Le client paie ce montant ET les frais de port de la commande (6,50 €, facturés une seule fois, pas ligne par ligne) : 108,50 € au total, ce que SCHEMA.md appelle le chiffre d'affaires TOTAL. Une consigne qui demande « le chiffre d'affaires » sans préciser lequel des deux est ambiguë — et dans ce cours, chaque consigne sur un montant précise toujours lequel des deux elle attend.",
+      retenir: "Chiffre d'affaires PRODUITS (les articles seuls) et chiffre d'affaires TOTAL (articles + frais de port) sont deux nombres différents : une consigne sur un montant doit toujours préciser lequel des deux elle demande."
+    },
+    {
+      id: "p2-39", type: "qcm",
+      niveau: "P2", competence: "agreger", categorie: "Comprendre", difficulte: 3,
+      titre: "Et pour TOUTES les commandes à la fois ?",
+      question: "Pour calculer le chiffre d'affaires TOTAL de TOUTES les commandes de la boutique (pas une seule), il faudra un jour additionner le total des lignes de chaque commande à ses frais de port, commande par commande — ce qui demande de relier lignes_commande et commandes (une jointure, palier 3). À quoi faudra-t-il faire attention pour ne pas fausser ce calcul ?",
+      options: [
+        "Ne compter les frais de port d'une commande qu'une seule fois, même si cette commande a plusieurs lignes",
+        "Ne compter que les commandes qui ont exactement une seule ligne",
+        "Ignorer les frais de port de toutes les commandes à plusieurs lignes",
+        "Multiplier les frais de port par le nombre de lignes de chaque commande"
+      ],
+      reponse: 0,
+      piste: "Une commande a UN SEUL montant de frais de port, quel que soit son nombre de lignes de produits.",
+      clause: "SUM",
+      exemple: "La commande 1038 a 4 lignes mais un seul frais de port (6,50 €) : si on le comptait une fois par ligne, on obtiendrait 26,00 € de frais de port au lieu de 6,50 €.",
+      explication: "Une fois les deux tables reliées (palier 3), chaque commande à plusieurs lignes apparaîtra plusieurs fois dans le résultat joint — une fois par ligne. Additionner frais_port directement sur ce résultat joint compterait alors les frais de port de cette commande une fois PAR LIGNE, au lieu d'une fois par commande : exactement le piège que SCHEMA.md signale (12 911,50 € au lieu de 12 619,00 € sur l'ensemble de la boutique). Il faudra additionner les frais de port à part, une fois par commande, avant de les ajouter au total des produits.",
+      retenir: "Relier deux tables où l'une a plusieurs lignes pour une de l'autre (ici, plusieurs lignes de commande pour une commande) répète cette ligne unique autant de fois qu'il y a de lignes liées : une colonne de la table « une seule ligne » comptée directement sur ce résultat joint sera gonflée d'autant."
     }
   ]
 };
@@ -856,6 +1453,234 @@ const CHAPITRES = [
       astuce: "AS est facultatif, mais vivement conseillé dès qu'une colonne est calculée : sans lui, SQLite invente un nom de colonne souvent peu lisible."
     },
     exercices: ["p1-26", "p1-27", "p1-28"]
+  },
+  {
+    id: "ch-p2-1", niveau: "P2", titre: "Changer de point de vue : regrouper plutôt que lister", duree: "6 min",
+    resume: "Agréger, ce n'est plus lire des lignes une par une : c'est résumer des groupes de lignes en un seul chiffre.",
+    lecon: {
+      intro: "Jusqu'ici, chaque requête renvoyait une ligne par ligne de la table : filtrer, trier, limiter ne changeaient jamais ce qu'était une ligne du résultat. À partir de maintenant, une ligne du résultat peut représenter tout un groupe de lignes de la table, résumé en un seul chiffre : un nombre de commandes, une somme, une moyenne. C'est le même SQL, mais on ne lit plus les données, on les résume.",
+      points: [
+        "Une fonction d'agrégat (COUNT, SUM, AVG, MIN, MAX) ne renvoie jamais une valeur par ligne de la table : elle prend plusieurs lignes en entrée et n'en renvoie qu'une seule en sortie, le résumé de tout ce qu'elle a reçu.",
+        "Sans GROUP BY, une fonction d'agrégat résume TOUTE la table en une seule ligne de résultat : impossible de distinguer un groupe d'un autre tant qu'on n'a pas dit comment les séparer.",
+        "GROUP BY sépare les lignes en plusieurs groupes selon une colonne (un groupe par ville, par statut, par mois…) : la fonction d'agrégat est alors recalculée une fois par groupe, et chaque groupe devient une ligne du résultat.",
+        "La question change de nature : on ne demande plus « quelles sont les lignes qui… » mais « combien, quelle somme, quelle moyenne, pour chaque… ». C'est ce saut qui est difficile, pas la syntaxe qui vient après."
+      ],
+      exemple: {
+        titre: "Résumer toute la table en une seule ligne",
+        code: "SELECT COUNT(*) FROM commandes;",
+        resultat: "1 ligne, 1 colonne : 70.",
+        commentaire: "COUNT(*) a reçu les 70 lignes de la table commandes et n'en a renvoyé qu'une : leur nombre. Aucune colonne, aucun WHERE n'a changé cette logique — ce que fait COUNT(*) ici, c'est déjà agréger, même sans GROUP BY. Les prochains chapitres montrent comment obtenir ce chiffre par ville, par statut ou par mois plutôt que pour toute la boutique à la fois."
+      },
+      astuce: "Si une requête contenant une fonction d'agrégat renvoie autant de lignes que la table de départ (ou une par ligne, au lieu d'une par groupe), c'est presque toujours qu'il manque un GROUP BY : gardez ce réflexe pour les prochains chapitres, SQLite ne vous préviendra pas de l'oubli."
+    },
+    exercices: ["p2-01", "p2-02"]
+  },
+  {
+    id: "ch-p2-2", niveau: "P2", titre: "Compter avec COUNT", duree: "6 min",
+    resume: "COUNT(*) compte des lignes ; COUNT(colonne) ne compte que les valeurs présentes — ce n'est pas la même question.",
+    lecon: {
+      intro: "COUNT est la première fonction d'agrégat à manier, et la plus trompeuse : elle existe sous deux écritures qui se ressemblent, COUNT(*) et COUNT(colonne), et qui ne comptent pourtant pas la même chose dès qu'une colonne contient des valeurs manquantes.",
+      points: [
+        "COUNT(*) compte toutes les lignes, sans regarder leur contenu : NULL ou pas, chaque ligne compte pour une.",
+        "COUNT(colonne) ne compte que les lignes où CETTE colonne précise a une valeur : une ligne NULL sur cette colonne n'est pas comptée.",
+        "COUNT(DISTINCT colonne) compte des VALEURS différentes, pas des lignes : deux lignes avec la même valeur ne comptent qu'une fois, et NULL reste ignoré.",
+        "Ouvrez l'explorateur sur la table clients : quatre lignes ont une ville vide. C'est exactement la différence que COUNT(*) et COUNT(ville) vont révéler."
+      ],
+      exemple: {
+        titre: "COUNT(*) contre COUNT(colonne)",
+        code: "SELECT COUNT(*), COUNT(ville) FROM clients;",
+        resultat: "40 et 36 : deux nombres différents, sur la même table.",
+        commentaire: "COUNT(*) compte les 40 clients, tous confondus. COUNT(ville) n'en compte que 36 : les 4 clients sans ville connue ne participent pas au second nombre."
+      },
+      astuce: "Dès qu'une question porte sur une colonne qui peut être vide, demandez-vous laquelle des deux écritures elle demande vraiment : « combien de lignes » (COUNT(*)) ou « combien ont une valeur ici » (COUNT(colonne)) ne sont pas la même question."
+    },
+    exercices: ["p2-03", "p2-04", "p2-05", "p2-06"]
+  },
+  {
+    id: "ch-p2-3", niveau: "P2", titre: "Sommer : SUM", duree: "5 min",
+    resume: "Additionner une colonne numérique sur toutes les lignes d'un groupe — et seulement celles qu'on voulait.",
+    lecon: {
+      intro: "SUM additionne une colonne numérique sur toutes les lignes qu'on lui présente. C'est la plus simple des fonctions d'agrégat à calculer, et la plus facile à faire porter sur le mauvais ensemble de lignes si un filtre manque.",
+      points: [
+        "SUM(colonne) additionne toutes les valeurs non NULL de cette colonne, sur les lignes qui lui sont données.",
+        "Comme toute fonction d'agrégat, SUM ignore les NULL : ils ne comptent ni pour 0, ni pour rien du tout, ils sont simplement absents du calcul.",
+        "SUM porte sur exactement les lignes que WHERE lui laisse : un WHERE oublié ne provoque aucune erreur, juste une somme calculée sur un ensemble de lignes plus large que prévu."
+      ],
+      exemple: {
+        titre: "Le total d'une commande",
+        code: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande WHERE commande_id = 1038;",
+        resultat: "102 : la somme des 4 lignes de cette commande, avant frais de port.",
+        commentaire: "Sans le WHERE, cette même requête additionnerait les lignes de TOUTES les commandes de la boutique, pas seulement celle-ci — un résultat toujours valide, mais qui ne répond plus à la question posée."
+      },
+      astuce: "Avant de lire le résultat d'un SUM, vérifiez toujours le WHERE qui le précède : c'est lui qui décide du périmètre exact de l'addition, et son absence ne provoque jamais d'erreur visible."
+    },
+    exercices: ["p2-07", "p2-08", "p2-09"]
+  },
+  {
+    id: "ch-p2-4", niveau: "P2", titre: "La moyenne et les valeurs manquantes : AVG", duree: "6 min",
+    resume: "AVG divise par le nombre de valeurs présentes, pas par le nombre total de lignes — tout l'écart avec SUM/COUNT(*) vient de là.",
+    lecon: {
+      intro: "AVG calcule une moyenne, mais pas n'importe comment dès qu'une colonne contient des valeurs manquantes : elle ne divise que par le nombre de valeurs réellement présentes, jamais par le nombre total de lignes de la table.",
+      points: [
+        "AVG(colonne) ignore les lignes NULL avant de calculer : elle ne fait la moyenne que des valeurs présentes.",
+        "AVG(colonne) équivaut exactement à SUM(colonne) / COUNT(colonne) — jamais à SUM(colonne) / COUNT(*) dès qu'il existe des NULL.",
+        "38 des 70 commandes n'ont pas de note : une moyenne qui diviserait par 70 au lieu de 32 serait mécaniquement bien plus basse que la vraie moyenne des commandes notées."
+      ],
+      exemple: {
+        titre: "Deux divisions, deux résultats",
+        code: "SELECT AVG(note), SUM(note) * 1.0 / COUNT(*) FROM commandes;",
+        resultat: "3,75 et environ 1,71 : deux nombres très différents, sur la même colonne.",
+        commentaire: "AVG(note) divise 120 (la somme des notes présentes) par 32 (le nombre de notes présentes) : 3,75. SUM(note) / COUNT(*) divise les mêmes 120 par 70 (le nombre TOTAL de commandes, notées ou pas) : un résultat bien plus bas, qui ne représente plus la satisfaction moyenne de personne en particulier."
+      },
+      astuce: "Si une moyenne vous paraît anormalement basse sur une colonne qui peut être vide, vérifiez que vous avez bien utilisé AVG, et pas une division manuelle par COUNT(*) : l'explorateur vous montre en un coup d'œil combien de lignes de la colonne sont réellement renseignées."
+    },
+    exercices: ["p2-10", "p2-11", "p2-12", "p2-13"]
+  },
+  {
+    id: "ch-p2-5", niveau: "P2", titre: "Le plus petit, le plus grand : MIN, MAX", duree: "5 min",
+    resume: "MIN et MAX trouvent une valeur extrême sur une colonne, en ignorant les valeurs manquantes exactement comme les autres fonctions d'agrégat.",
+    lecon: {
+      intro: "MIN et MAX cherchent respectivement la plus petite et la plus grande valeur d'une colonne. Rien de nouveau dans leur façon de traiter les NULL : elles suivent exactement la même règle que COUNT(colonne), SUM et AVG.",
+      points: [
+        "MIN(colonne) et MAX(colonne) parcourent toutes les lignes et renvoient la valeur la plus petite, respectivement la plus grande, trouvée.",
+        "Comme les autres fonctions d'agrégat, MIN et MAX ignorent les NULL : une ligne sans valeur n'est jamais candidate au minimum ou au maximum.",
+        "0 est une valeur comme une autre pour MIN et MAX ; elle n'est jamais confondue avec une absence de valeur."
+      ],
+      exemple: {
+        titre: "Les deux bornes du catalogue",
+        code: "SELECT MIN(prix), MAX(prix) FROM produits;",
+        resultat: "3,50 et 1 299,00 : les deux prix extrêmes du catalogue, dans la même ligne de résultat.",
+        commentaire: "MIN et MAX peuvent figurer côte à côte dans le même SELECT, chacune dans sa colonne : rien n'empêche de demander plusieurs résumés à la fois."
+      },
+      astuce: "MIN(colonne) et MAX(colonne) ne renvoient jamais une LIGNE entière de la table, seulement la VALEUR trouvée : pour connaître aussi, par exemple, le nom du produit le moins cher, il faudra un outil que ce cours n'a pas encore vu (une sous-requête, au palier 4)."
+    },
+    exercices: ["p2-14", "p2-15", "p2-16"]
+  },
+  {
+    id: "ch-p2-6", niveau: "P2", titre: "Regrouper les lignes : GROUP BY", duree: "7 min",
+    resume: "GROUP BY sépare les lignes en groupes selon une colonne : une fonction d'agrégat du SELECT se recalcule alors pour chacun.",
+    lecon: {
+      intro: "GROUP BY est la clause qui rend les fonctions d'agrégat vraiment utiles : au lieu de résumer toute la table en une seule ligne, elle la sépare d'abord en plusieurs groupes, un résumé par groupe.",
+      points: [
+        "GROUP BY colonne forme un groupe par valeur différente de cette colonne, NULL compris : il forme son propre groupe, comme n'importe quelle autre valeur.",
+        "Toute fonction d'agrégat du SELECT (COUNT, SUM, AVG, MIN, MAX) se recalcule alors séparément pour chaque groupe, et devient une ligne du résultat.",
+        "Mélanger une colonne ordinaire et une fonction d'agrégat SANS GROUP BY ne provoque AUCUNE erreur dans SQLite : la colonne ordinaire affiche une valeur arbitraire, à côté d'un agrégat qui porte sur toute la table. C'est un résultat qui a l'air valide, et qui ne l'est pas.",
+        "Le nombre de lignes d'un résultat GROUP BY dépend uniquement du nombre de valeurs différentes de la clé de regroupement, jamais du nombre de lignes de départ."
+      ],
+      exemple: {
+        titre: "Une ligne par statut",
+        code: "SELECT statut, COUNT(*) FROM commandes GROUP BY statut;",
+        resultat: "5 lignes, une par statut : annulee, en_preparation, expediee, livree, retournee, chacune avec son propre compte.",
+        commentaire: "Sans GROUP BY statut, cette même requête (SELECT statut, COUNT(*) FROM commandes) serait acceptée par SQLite, mais renverrait une seule ligne trompeuse : un statut choisi arbitrairement, et un compte qui porte en réalité sur toute la table."
+      },
+      astuce: "Avant d'exécuter une requête qui mélange une colonne et une fonction d'agrégat, demandez-vous toujours : ai-je bien ajouté GROUP BY sur cette colonne ? Si le nombre de lignes du résultat vous surprend, c'est le premier réflexe à avoir — SQLite ne vous préviendra jamais de l'oubli."
+    },
+    exercices: ["p2-17", "p2-18", "p2-19", "p2-20", "p2-21"]
+  },
+  {
+    id: "ch-p2-7", niveau: "P2", titre: "Filtrer des groupes : HAVING", duree: "6 min",
+    resume: "HAVING filtre des groupes après le calcul de l'agrégat ; WHERE filtre des lignes avant — confondre les deux tronque silencieusement un total.",
+    lecon: {
+      intro: "WHERE et GROUP BY ne suffisent pas toujours : parfois, la condition qui intéresse porte sur le RÉSULTAT d'un agrégat (un total, une moyenne, un compte), pas sur une colonne brute de la table. C'est le rôle de HAVING.",
+      points: [
+        "HAVING s'écrit après GROUP BY, et filtre les GROUPES déjà formés, selon le résultat d'une fonction d'agrégat.",
+        "WHERE filtre des LIGNES, avant que les groupes n'existent ; HAVING filtre des GROUPES, après que leur agrégat a été calculé — ce n'est jamais le même moment.",
+        "Utiliser WHERE pour une condition qui devrait porter sur un total tronque ce total : il ne reste alors que les lignes qui, à elles seules, dépassent déjà le seuil, pas les groupes dont la SOMME le dépasse.",
+        "SQLite effectue une division ENTIÈRE entre deux nombres entiers : le résultat est tronqué, pas arrondi, ce qui peut rendre un HAVING sur une moyenne calculée à la main (SUM / COUNT) trompeur."
+      ],
+      exemple: {
+        titre: "Les commandes qui dépassent 1 000 €",
+        code: "SELECT commande_id, SUM(quantite * prix_unitaire) AS total FROM lignes_commande GROUP BY commande_id HAVING total > 1000;",
+        resultat: "6 commandes sur 70, chacune avec un total par commande supérieur à 1 000 €.",
+        commentaire: "HAVING total > 1000 ne regarde le total de chaque commande qu'UNE FOIS qu'il a été calculé par GROUP BY et SUM. Écrire ce même seuil dans un WHERE comparerait chaque LIGNE isolément, avant toute addition — un résultat différent, et plus petit."
+      },
+      astuce: "Une règle simple pour ne jamais confondre WHERE et HAVING : si la condition cite directement une colonne de la table, c'est WHERE ; si elle cite le résultat d'une fonction d'agrégat (SUM(...), COUNT(...), AVG(...)), c'est HAVING."
+    },
+    exercices: ["p2-22", "p2-23", "p2-24", "p2-25"]
+  },
+  {
+    id: "ch-p2-8", niveau: "P2", titre: "Classer avec CASE WHEN", duree: "6 min",
+    resume: "CASE WHEN fabrique une colonne calculée selon des conditions, ligne par ligne — utile pour regrouper des catégories à sa façon, pas seulement celles qui existent déjà dans la table.",
+    lecon: {
+      intro: "CASE WHEN construit une valeur différente selon une ou plusieurs conditions, ligne par ligne. Combinée à GROUP BY, elle permet de regrouper les lignes selon des catégories qu'on invente soi-même, pas seulement celles déjà présentes dans une colonne de la table.",
+      points: [
+        "CASE WHEN condition1 THEN valeur1 WHEN condition2 THEN valeur2 ELSE valeur3 END teste les conditions dans l'ordre, et s'arrête à la première qui est vraie.",
+        "Sans ELSE, une ligne qui ne vérifie AUCUNE condition reçoit NULL — silencieusement, sans erreur.",
+        "Une fois nommée par AS, une colonne CASE WHEN se GROUP BY exactement comme une colonne ordinaire de la table.",
+        "C'est l'un des outils qui permettent de traduire une question métier floue (« les commandes qui ont bien abouti », « les commandes perdues ») en catégories SQL précises."
+      ],
+      exemple: {
+        titre: "Deux familles de statuts",
+        code: "SELECT CASE WHEN statut IN ('annulee', 'retournee') THEN 'perdue' ELSE 'aboutie' END AS famille, COUNT(*) FROM commandes GROUP BY famille;",
+        resultat: "2 lignes : perdue (16 commandes) et aboutie (54 commandes).",
+        commentaire: "CASE WHEN a transformé les 5 statuts d'origine en seulement 2 familles, choisies par l'auteur de la requête — pas par la structure de la table."
+      },
+      astuce: "Si un groupe NULL apparaît dans un résultat GROUP BY alors que vous ne l'attendiez pas, vérifiez d'abord un CASE WHEN voisin sans ELSE : c'est la cause la plus fréquente d'un NULL qui n'était pas déjà dans la table."
+    },
+    exercices: ["p2-26", "p2-27", "p2-28"]
+  },
+  {
+    id: "ch-p2-9", niveau: "P2", titre: "Extraire une date", duree: "6 min",
+    resume: "strftime extrait une partie d'une date écrite en AAAA-MM-JJ — toujours sous forme de texte, jamais de nombre.",
+    lecon: {
+      intro: "Les dates de Requêt'R sont du texte au format AAAA-MM-JJ : strftime en extrait une partie — l'année, le mois, ou les deux ensemble — toujours sous forme de texte, elle aussi.",
+      points: [
+        "strftime('%Y', colonne) extrait l'année (4 chiffres) ; strftime('%m', colonne) le mois (2 chiffres) ; strftime('%Y-%m', colonne) les deux ensemble, dans cet ordre.",
+        "strftime renvoie toujours du TEXTE, jamais un nombre entier : le comparer à un nombre nu (= 2025, sans apostrophes) ne trouve silencieusement aucune ligne.",
+        "Extraire le mois SEUL (%m) confond les mêmes mois d'années différentes : janvier 2025 et janvier 2026 portent tous les deux '01'. Dès que les données couvrent plusieurs années, %Y-%m garde la distinction.",
+        "Ouvrez l'explorateur sur la table commandes : la colonne date_commande s'étend de janvier 2025 à juin 2026, sur deux années civiles."
+      ],
+      exemple: {
+        titre: "L'année de chaque commande",
+        code: "SELECT strftime('%Y', date_commande) AS annee, COUNT(*) FROM commandes GROUP BY annee;",
+        resultat: "2025 (44 commandes) et 2026 (26 commandes).",
+        commentaire: "strftime('%Y', date_commande) réduit chaque date à son année, sous forme de texte ('2025', pas 2025) ; GROUP BY regroupe ensuite sur cette valeur réduite, exactement comme sur une colonne ordinaire."
+      },
+      astuce: "Si une condition WHERE sur une date extraite par strftime ne trouve jamais rien alors que vous êtes sûr qu'elle devrait, vérifiez en premier que vous comparez bien à une valeur ENTRE APOSTROPHES : strftime ne renvoie jamais de nombre."
+    },
+    exercices: ["p2-29", "p2-30", "p2-31", "p2-32"]
+  },
+  {
+    id: "ch-p2-10", niveau: "P2", titre: "Regrouper par date : le trou et la frontière", duree: "6 min",
+    resume: "GROUP BY ne peut révéler que des groupes qui existent : un mois entier sans commande disparaît du résultat, il n'y apparaît jamais à zéro.",
+    lecon: {
+      intro: "Regrouper par mois réserve une surprise dès que les données ont un trou : GROUP BY ne fabrique jamais de ligne pour un groupe vide, même si ce groupe existe bien dans le calendrier.",
+      points: [
+        "La boutique a enregistré des commandes sur 18 mois civils, de janvier 2025 à juin 2026 — mais aucune en août 2025 : un trou d'un mois entier.",
+        "GROUP BY ne peut regrouper que des lignes qui EXISTENT : un mois sans la moindre commande n'apparaît jamais dans le résultat, ni à zéro, ni autrement — il est simplement absent.",
+        "Deux dates consécutives au jour près peuvent appartenir à deux groupes différents dès qu'elles franchissent une frontière de calendrier : la commande 1044 (31 décembre 2025) et la commande 1045 (1er janvier 2026) se suivent directement, mais tombent dans deux années différentes.",
+        "Un résultat à zéro ligne n'est pas toujours une erreur : il peut révéler une vraie absence de données, comme ce mois d'août sans la moindre commande."
+      ],
+      exemple: {
+        titre: "Dix-huit mois possibles, dix-sept présents",
+        code: "SELECT COUNT(DISTINCT strftime('%Y-%m', date_commande)) FROM commandes;",
+        resultat: "17, alors que janvier 2025 à juin 2026 compte 18 mois civils.",
+        commentaire: "Le compte distinct des mois présents dans les données (17) est inférieur au nombre de mois qui existent dans le calendrier sur cette période (18) : la différence, c'est le mois sans aucune commande, invisible pour GROUP BY."
+      },
+      astuce: "Si vous deviez un jour comparer un mois à « celui d'avant » plutôt qu'à sa seule position dans un résultat trié, méfiez-vous : un outil comme LAG (vu bien plus tard, au palier 4) compare une ligne à la ligne juste au-dessus dans le résultat, pas au mois calendaire précédent — un trou comme celui d'août le ferait sauter sans prévenir."
+    },
+    exercices: ["p2-33", "p2-34", "p2-35", "p2-36"]
+  },
+  {
+    id: "ch-p2-11", niveau: "P2", titre: "Chiffre d'affaires : lequel des deux ?", duree: "5 min",
+    resume: "« Chiffre d'affaires » seul ne veut rien dire de précis : il faut toujours savoir si les frais de port sont comptés ou non.",
+    lecon: {
+      intro: "Dès qu'une question porte sur de l'argent, un mot aussi courant que « chiffre d'affaires » cache une ambiguïté : compte-t-il les frais de port, ou seulement la valeur des produits vendus ? Les deux réponses sont légitimes, et donnent deux nombres différents.",
+      points: [
+        "Le chiffre d'affaires PRODUITS d'une commande est le total de ses lignes (quantité × prix unitaire) : il exclut les frais de port.",
+        "Le chiffre d'affaires TOTAL ajoute les frais de port de la commande — comptés UNE SEULE FOIS par commande, pas une fois par ligne.",
+        "Une consigne qui demande « le chiffre d'affaires » sans préciser lequel des deux est ambiguë : à partir de ce palier, toute consigne sur un montant précise toujours lequel des deux elle attend.",
+        "Le jour où il faudra calculer ce total sur TOUTES les commandes à la fois (une jointure, palier 3), il faudra veiller à ne compter les frais de port qu'une fois par commande, pas une fois par ligne de produit."
+      ],
+      exemple: {
+        titre: "Produits, puis total",
+        code: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande WHERE commande_id = 1038;",
+        resultat: "102,00 € : le chiffre d'affaires PRODUITS de cette seule commande.",
+        commentaire: "Cette commande a aussi 6,50 € de frais de port (visibles dans l'explorateur, table commandes, colonne frais_port) : son chiffre d'affaires TOTAL est donc 108,50 €, pas 102,00 €."
+      },
+      astuce: "Chaque fois qu'une consigne de ce cours parle d'argent, relisez-la en vous demandant : parle-t-elle des produits seuls, ou du total payé ? Le mot qu'elle choisit (« produits » ou « total ») répond toujours à cette question — sans exception à partir de maintenant."
+    },
+    exercices: ["p2-37", "p2-38", "p2-39"]
   }
 ];
 
@@ -864,7 +1689,7 @@ const CHAPITRES = [
    `termine` (D051) : posé à la main par l'auteur quand le palier est déclaré fini — l'Autotest (lot 5) fait alors passer
    ses deux contrôles de couverture d'un avertissement à un échec bloquant pour ce palier. */
 const PALIERS = [
-  { id: "P1", titre: "Lire", termine: false },
+  { id: "P1", titre: "Lire", termine: true },
   { id: "P2", titre: "Agréger", termine: false },
   { id: "P3", titre: "Croiser", termine: false },
   { id: "P4", titre: "Raisonner", termine: false },
@@ -887,7 +1712,14 @@ const CLAUSES = {
   "AS": { syntaxe: "SELECT expression AS alias", aide: "donne un nom à une colonne calculée ou renommée, pour la lire plus facilement" },
   "GROUP BY": { syntaxe: "SELECT colonne, COUNT(*) FROM table GROUP BY colonne", aide: "regroupe les lignes qui ont la même valeur, pour calculer une valeur par groupe" },
   "LEFT JOIN": { syntaxe: "… FROM a LEFT JOIN b ON b.cle = a.id", aide: "garde toutes les lignes de a, même sans correspondance dans b (les colonnes de b valent alors NULL)" },
-  "COUNT": { syntaxe: "COUNT(*) ou COUNT(colonne)", aide: "COUNT(*) compte les lignes ; COUNT(colonne) ne compte que les valeurs renseignées (non NULL)" }
+  "COUNT": { syntaxe: "COUNT(*) ou COUNT(colonne)", aide: "COUNT(*) compte les lignes ; COUNT(colonne) ne compte que les valeurs renseignées (non NULL)" },
+  "SUM": { syntaxe: "SUM(colonne)", aide: "additionne les valeurs non NULL d'une colonne numérique, sur les lignes concernées" },
+  "AVG": { syntaxe: "AVG(colonne)", aide: "fait la moyenne des valeurs non NULL d'une colonne ; divise par le nombre de valeurs présentes, pas par le nombre total de lignes" },
+  "MIN": { syntaxe: "MIN(colonne)", aide: "renvoie la plus petite valeur non NULL d'une colonne" },
+  "MAX": { syntaxe: "MAX(colonne)", aide: "renvoie la plus grande valeur non NULL d'une colonne" },
+  "HAVING": { syntaxe: "SELECT colonne, agrégat FROM table GROUP BY colonne HAVING condition", aide: "filtre les groupes déjà formés par GROUP BY, selon le résultat d'une fonction d'agrégat — jamais avant le regroupement" },
+  "CASE WHEN": { syntaxe: "CASE WHEN condition1 THEN valeur1 WHEN condition2 THEN valeur2 ELSE valeur3 END", aide: "construit une valeur selon des conditions testées dans l'ordre ; sans ELSE, une ligne qui ne vérifie rien reçoit NULL" },
+  "strftime": { syntaxe: "strftime('%Y', colonne) ou strftime('%Y-%m', colonne)", aide: "extrait une partie d'une date (année, mois…), toujours sous forme de texte — jamais un nombre" }
 };
 
 /* Vocabulaire du Lexique (lot 6) : les mots qu'il faut comprendre avant de lire CLAUSES. Le chapitre 0 les
@@ -906,11 +1738,11 @@ const VOCABULAIRE = {
 
 /* Fiches de clause (remplace les fiches de fonction Excel de Classe'R, DECISIONS.md « Remplacé »), ouvertes
    depuis le Lexique (#/fiche/<clause>) : à quoi ça sert, dans quel contexte y penser, l'erreur fréquente, les
-   clauses liées. Un palier à la fois (D002) : seules les 11 clauses du palier 1 ont leur fiche pour l'instant ;
-   `voirAussi` ne cite donc jamais une clause qui n'en a pas encore. `entrainements` est posé vide : la
-   structure existe (reprise de Classe'R, Reference/classer-v2.html:4427), son contenu est délibérément
-   différé après le palier 2 (DECISIONS.md D055) pour juger s'il apporte quelque chose que les exercices
-   n'apportent pas déjà. */
+   clauses liées. Un palier à la fois (D002) : les 11 clauses du palier 1 et les 9 du palier 2 ont leur fiche ;
+   `voirAussi` ne cite donc jamais une clause qui n'en a pas encore (LEFT JOIN, palier 3, n'en a toujours pas).
+   `entrainements` est posé vide : la structure existe (reprise de Classe'R, Reference/classer-v2.html:4427),
+   son contenu reste délibérément différé (DECISIONS.md D055) pour juger s'il apporte quelque chose que les
+   exercices n'apportent pas déjà — décision à reprendre une fois le palier 2 terminé. */
 const FICHES = {
   "SELECT": {
     but: "Choisir les colonnes à afficher dans le résultat, et dans quel ordre.",
@@ -987,6 +1819,69 @@ const FICHES = {
     contexte: "NULL n'est ni zéro, ni texte vide, ni un mot : aucune comparaison avec = ne le trouve, pas même = NULL. IS NULL (et IS NOT NULL) sont les seules façons correctes de le tester.",
     erreur: "Utiliser <> pour exclure une valeur en pensant que les lignes NULL seront exclues aussi : <> ignore silencieusement les lignes NULL, qui ne sont alors ni gardées ni explicitement écartées.",
     voirAussi: ["WHERE"],
+    entrainements: []
+  },
+  "COUNT": {
+    but: "Compter des lignes (COUNT(*)) ou des valeurs non NULL d'une colonne (COUNT(colonne)).",
+    contexte: "La première fonction d'agrégat à utiliser dès qu'une question commence par « combien » : combien de commandes, combien de clients ont renseigné telle information…",
+    erreur: "Confondre COUNT(*) et COUNT(colonne) : le premier compte toutes les lignes, le second ignore les lignes où cette colonne précise est NULL. Les deux peuvent donner des résultats très différents sur la même table.",
+    voirAussi: ["GROUP BY", "IS NULL", "SUM"],
+    entrainements: []
+  },
+  "GROUP BY": {
+    but: "Séparer les lignes en groupes selon une colonne, pour calculer une valeur par groupe plutôt que pour toute la table.",
+    contexte: "Dès qu'une fonction d'agrégat (COUNT, SUM, AVG, MIN, MAX) doit être calculée séparément pour chaque ville, chaque statut, chaque mois… GROUP BY sépare d'abord les lignes, avant que l'agrégat ne les résume.",
+    erreur: "Mélanger une colonne ordinaire et une fonction d'agrégat sans GROUP BY : SQLite l'accepte sans erreur, et renvoie une seule ligne trompeuse, avec une valeur arbitraire pour la colonne ordinaire.",
+    voirAussi: ["COUNT", "HAVING", "CASE WHEN"],
+    entrainements: []
+  },
+  "SUM": {
+    but: "Additionner les valeurs non NULL d'une colonne numérique.",
+    contexte: "Utile pour un total : la quantité vendue, le montant d'une commande, les frais de port perçus sur une période.",
+    erreur: "Oublier le WHERE qui restreint la somme au bon ensemble de lignes : SUM additionne alors davantage de lignes que prévu, sans qu'aucune erreur ne le signale.",
+    voirAussi: ["AVG", "GROUP BY", "HAVING"],
+    entrainements: []
+  },
+  "AVG": {
+    but: "Calculer la moyenne des valeurs non NULL d'une colonne.",
+    contexte: "Dès qu'une colonne peut être vide pour certaines lignes (une note, un délai…), AVG est le bon outil : elle ne divise que par le nombre de valeurs réellement présentes.",
+    erreur: "Remplacer AVG par SUM(colonne) / COUNT(*) : cette division utilise le nombre TOTAL de lignes au dénominateur, pas le nombre de valeurs présentes, ce qui écrase le résultat dès qu'il y a des NULL.",
+    voirAussi: ["SUM", "COUNT", "IS NULL"],
+    entrainements: []
+  },
+  "MIN": {
+    but: "Trouver la plus petite valeur non NULL d'une colonne.",
+    contexte: "Utile pour une borne basse : le prix le plus bas, la date la plus ancienne, le stock le plus faible.",
+    erreur: "Oublier que MIN ne renvoie que la VALEUR trouvée, pas la ligne entière qui la porte : pour connaître aussi, par exemple, le nom du produit le moins cher, MIN seul ne suffit pas.",
+    voirAussi: ["MAX", "GROUP BY"],
+    entrainements: []
+  },
+  "MAX": {
+    but: "Trouver la plus grande valeur non NULL d'une colonne.",
+    contexte: "Utile pour une borne haute : le prix le plus élevé, la date la plus récente, le plus gros total.",
+    erreur: "Oublier que MAX ne renvoie que la VALEUR trouvée, pas la ligne entière qui la porte.",
+    voirAussi: ["MIN", "GROUP BY"],
+    entrainements: []
+  },
+  "HAVING": {
+    but: "Filtrer des groupes déjà formés par GROUP BY, selon le résultat d'une fonction d'agrégat.",
+    contexte: "Dès qu'une condition porte sur un TOTAL, une MOYENNE ou un COMPTE par groupe — « les clients qui ont commandé pour plus de 500 € », « les statuts avec au moins 10 commandes » — c'est HAVING qu'il faut, pas WHERE.",
+    erreur: "Écrire cette condition dans un WHERE : WHERE filtre des lignes AVANT le regroupement, et tronque silencieusement le total au lieu de le comparer une fois complet.",
+    voirAussi: ["GROUP BY", "SUM", "COUNT"],
+    entrainements: []
+  },
+  "CASE WHEN": {
+    but: "Construire une valeur différente selon une ou plusieurs conditions, testées dans l'ordre, ligne par ligne.",
+    contexte: "Utile pour regrouper des catégories qu'on choisit soi-même (par exemple, des statuts en « aboutie »/« perdue ») plutôt que celles déjà présentes dans une colonne.",
+    erreur: "Oublier le ELSE final : une ligne qui ne vérifie aucune condition reçoit alors NULL, sans erreur visible — un groupe NULL inattendu dans un GROUP BY qui suit.",
+    voirAussi: ["GROUP BY", "WHERE"],
+    entrainements: []
+  },
+  "strftime": {
+    but: "Extraire une partie d'une date écrite en AAAA-MM-JJ (l'année, le mois, ou les deux), sous forme de texte.",
+    contexte: "Indispensable pour regrouper ou filtrer par année ou par mois : strftime('%Y', colonne), strftime('%Y-%m', colonne).",
+    erreur: "Comparer son résultat à un nombre sans apostrophes (= 2025 au lieu de = '2025') : strftime renvoie toujours du texte, la comparaison à un nombre ne trouve silencieusement rien.",
+    voirAussi: ["GROUP BY", "WHERE"],
     entrainements: []
   }
 };
