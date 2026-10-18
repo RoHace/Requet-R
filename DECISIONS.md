@@ -3,6 +3,7 @@
 Format : `D00n — titre`, puis **Contexte / Décision / Conséquences / Statut**.
 Une décision n'est jamais réécrite : si elle change, on ajoute une décision qui la remplace et on passe l'ancienne en « Remplacée par D0xx ».
 Référence de portage : `Reference/classer-v2.html` (Classe'R), lecture seule, jamais modifiée.
+Documents de référence : `SCHEMA.md` (la base de démonstration et ses pièges), `DESIGN.md` (le système de design et ses règles).
 
 ## Reprise (à lire en premier dans une nouvelle session)
 
