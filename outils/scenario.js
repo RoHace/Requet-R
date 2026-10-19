@@ -423,6 +423,90 @@
   ok("mission : après une mission sur l'export, un exercice sans jeu déclaré revient à la boutique",
     Moteur.etat.jeu === "boutique" && Moteur.nbTables() === 5, { jeu: Moteur.etat.jeu, tables: Moteur.nbTables() });
 
+  // ── Cascade des certifications de mission (D044, D069) : « Première mission » et « Sans filet » se
+  //    déclenchent à la première mission réussie, « Trois étoiles » à la troisième réussie sans indice, et
+  //    « Maître d'œuvre » quand TOUTES les missions livrées sont terminées. Les deux dernières ne peuvent pas
+  //    se vérifier sur une mission factice : elles comptent le contenu réel. On joue donc les missions de
+  //    CONTENU, toutes, dans l'ordre — en parcourant CONTENU.missions plutôt qu'une liste figée, pour que ce
+  //    contrôle reste juste si une mission est ajoutée plus tard.
+  //    Les solutions du contenu sont utilisées telles quelles : qu'une AUTRE formulation soit acceptée est déjà
+  //    prouvé par l'Autotest et par le bloc ci-dessus ; ce qu'on mesure ici, c'est le cumul entre missions.
+  const sortirDeMission = async () => {
+    for (let g = 0; g < 3 && Mission.courante; g++) {
+      const b = /MISSION TERMIN/.test(document.body.innerText) ? bouton("Autres missions") : bouton("Quitter la mission");
+      if (!b) break;
+      b.click(); await attendre(350);
+    }
+  };
+  {
+    const avantXp = Store.etat.xp;
+    const total = CONTENU.missions.length;
+    let xpCumul = 0, troisEtoilesVuA = null, maitreVuA = null;
+
+    for (let n = 0; n < total; n++) {
+      const def = CONTENU.missions[n];
+      await sortirDeMission();
+      await aller("#/missions");
+      const c = [...document.querySelectorAll("button.carte")].find(b => b.textContent.includes(def.titre));
+      ok(`cascade : la carte de « ${def.titre} » est présente`, !!c, document.body.innerText.slice(0, 200));
+      if (!c) break;
+      c.click(); await attendre(450);
+      for (const etape of def.etapes) {
+        saisir(etape.solution);
+        bouton("Vérifier").click();
+        await attendre(850);
+      }
+      const m = Mission.courante;
+      ok(`cascade : « ${def.titre} » terminée à 3 étoiles, sans indice`,
+        m && m.etat === "bilan" && m.etoiles === 3 && m.indicesTotal === 0,
+        { etat: m && m.etat, etoiles: m && m.etoiles, texte: document.body.innerText.slice(0, 220) });
+      if (!m || m.etat !== "bilan") break;
+      xpCumul += 30 * (def.difficulte || 1);
+      ok(`cascade : « ${def.titre} » verse 30 × ${def.difficulte} = ${30 * def.difficulte} XP, une seule fois`,
+        m.xp === 30 * (def.difficulte || 1) && Store.etat.xp === avantXp + xpCumul,
+        { xp: m.xp, attendu: 30 * (def.difficulte || 1), cumul: Store.etat.xp - avantXp, attenduCumul: xpCumul });
+      if (n === 0)
+        ok("cascade : « Sans filet » tombe à la première mission sans indice",
+          !!Store.etat.certifications["sans-indice"] && m.certifs.some(x => x.id === "sans-indice"),
+          { store: Object.keys(Store.etat.certifications), bilan: m.certifs.map(x => x.id) });
+      if (troisEtoilesVuA === null && m.certifs.some(x => x.id === "trois-etoiles")) troisEtoilesVuA = n + 1;
+      if (maitreVuA === null && m.certifs.some(x => x.id === "maitre-d-oeuvre")) maitreVuA = n + 1;
+    }
+
+    ok("cascade : « Trois étoiles » tombe au bilan de la 3e mission réussie sans indice",
+      total >= 3 ? troisEtoilesVuA === 3 && !!Store.etat.certifications["trois-etoiles"] : troisEtoilesVuA === null,
+      { vueA: troisEtoilesVuA, missions: total });
+    ok("cascade : « Maître d'œuvre » tombe au bilan de la DERNIÈRE mission, pas avant",
+      maitreVuA === total && !!Store.etat.certifications["maitre-d-oeuvre"], { vueA: maitreVuA, total });
+    ok("cascade : les quatre certifications de mission sont obtenues",
+      ["premiere-mission", "sans-indice", "trois-etoiles", "maitre-d-oeuvre"].every(id => !!Store.etat.certifications[id]),
+      Object.keys(Store.etat.certifications));
+    ok("cascade : toutes les missions sont terminées, à 3 étoiles, meilleur score conservé",
+      CONTENU.missions.every(d => { const e = Store.etat.missions[d.id]; return e && e.statut === "terminee" && e.etoiles === 3 && e.meilleurScore === 3; }),
+      Store.etat.missions);
+    ok("cascade : l'XP versée par les missions vaut la somme de 30 × difficulté, et rien de plus",
+      Store.etat.xp - avantXp === xpCumul, { verse: Store.etat.xp - avantXp, attendu: xpCumul });
+    ok("cascade : chaque compétence citée par une étape a été créditée (crédit par étape, D069)",
+      [...new Set(CONTENU.missions.flatMap(d => d.etapes.flatMap(e => e.competences || d.competences || [])))]
+        .every(id => Store.etat.competences[id] && Store.etat.competences[id].tentatives > 0),
+      [...new Set(CONTENU.missions.flatMap(d => d.etapes.flatMap(e => e.competences || d.competences || [])))]
+        .filter(id => !Store.etat.competences[id] || !Store.etat.competences[id].tentatives));
+
+    await sortirDeMission();
+    await aller("#/missions");
+    ok("cascade : la liste n'offre plus aucun « Commencer », et montre 3 étoiles pleines par mission",
+      !/Commencer/.test(document.body.innerText)
+      && document.querySelectorAll(".etoiles .pleine").length === 3 * total,
+      { pleines: document.querySelectorAll(".etoiles .pleine").length, attendu: 3 * total });
+
+    /* La derniere mission jouee travaillait sur l export brut : on verifie que l application revient bien a la
+       boutique des qu un ecran la demande (sans quoi la suite du scenario, et le bac a sable, verraient le
+       mauvais jeu de donnees). */
+    await aller("#/exercices"); await aller("#/exercice/p1-01");
+    ok("cascade : apres une mission sur l export brut, un exercice de la boutique recharge le bon jeu",
+      Moteur.etat.jeu === "boutique" && Moteur.nbTables() === 5, { jeu: Moteur.etat.jeu, tables: Moteur.nbTables() });
+  }
+
   // bac à sable et hors ligne
   await aller("#/bac-a-sable");
   ok("bac à sable : aperçu exécuté (5 lignes)", document.querySelectorAll(".resultat tbody tr").length === 5);
