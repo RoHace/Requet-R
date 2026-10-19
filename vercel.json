@@ -1,0 +1,5 @@
+{
+  "framework": null,
+  "buildCommand": "node build.mjs && mkdir -p public && cp requeter.html public/index.html",
+  "outputDirectory": "public"
+}

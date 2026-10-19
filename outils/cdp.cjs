@@ -10,9 +10,16 @@
 
    Il pilote le navigateur par le protocole DevTools (CDP, WebSocket natif de Node 22+), ouvre requeter.html en file://, exécute
    outils/scenario.js dans la page (un scénario qui s'auto-contrôle), compte les requêtes réseau (attendu : 1, le document) et les erreurs
-   console, puis supprime le profil. Code retour 1 au moindre échec. */
+   console, puis supprime le profil. Code retour 1 au moindre échec.
 
-const { spawn } = require("child_process"), fs = require("fs"), os = require("os"), path = require("path");
+   DEUX CONTEXTES (D070). L'invariant « aucune requête réseau » était vérifié en file:// seulement, et il y était vrai —
+   mais faux dès que la page était SERVIE : Chrome comme Edge réclament /favicon.ico d'eux-mêmes en HTTP, ce que file://
+   ne fait jamais. Un invariant vérifié dans un seul contexte n'est garanti que dans ce contexte. Chaque navigateur
+   rejoue donc la page une seconde fois, servie par un serveur HTTP local jetable, et l'on recompte : c'est le contexte
+   de la mise en ligne (Vercel). Le second passage ne rejoue pas tout le scénario — il contrôle l'invariant et vérifie
+   que la page a réellement démarré, pour qu'un compteur à zéro ne puisse pas venir d'une page morte. */
+
+const { spawn } = require("child_process"), fs = require("fs"), os = require("os"), path = require("path"), http = require("http");
 const { pathToFileURL } = require("url");
 
 const RACINE = path.resolve(__dirname, "..");
@@ -25,6 +32,23 @@ const CANDIDATS = {
 };
 const trouver = nom => (CANDIDATS[nom] || []).find(p => p && fs.existsSync(p));
 const attendre = ms => new Promise(r => setTimeout(r, ms));
+
+/** Serveur statique jetable, sur un port éphémère de la boucle locale : il ne sert QUE le document, sans aucun
+ *  en-tête ajouté, et consigne tout ce qu'on lui demande — y compris un /favicon.ico, qu'il renvoie en 404.
+ *  Rien n'est compensé : on veut voir ce que le navigateur réclame de lui-même. */
+function servirLaPage() {
+  const corps = fs.readFileSync(PAGE);
+  const demandes = [];
+  const serveur = http.createServer((req, res) => {
+    demandes.push(req.url);
+    if (req.url === "/" || req.url === "/requeter.html") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Length": corps.length });
+      res.end(corps);
+    } else { res.writeHead(404); res.end("absent"); }
+  });
+  return new Promise(ok => serveur.listen(0, "127.0.0.1", () =>
+    ok({ serveur, demandes, url: `http://127.0.0.1:${serveur.address().port}/requeter.html` })));
+}
 
 async function tester(nom, exe) {
   const profil = fs.mkdtempSync(path.join(os.tmpdir(), `requetr-${nom}-`));       // profil temporaire isolé : jamais la session de l'utilisateur
@@ -65,6 +89,30 @@ async function tester(nom, exe) {
     }
     console.log(`requêtes réseau : ${requetes.length} ${JSON.stringify(requetes)} | erreurs console : ${erreurs.length} ${erreurs.join(" ; ")}`);
     if (requetes.length !== 1 || erreurs.length) echecs++;
+
+    /* ── Second contexte : la même page, SERVIE en HTTP (D070) ─────────────────────────────────────────
+       On repart d'un compteur propre et l'on recharge la page depuis le serveur local. Attendu, là aussi :
+       une seule requête, le document. Toute autre requête est un manquement à l'invariant. */
+    const borne = evenements.length;
+    const site = await servirLaPage();
+    await cmd("Page.navigate", { url: site.url });
+    await attendre(4000);
+    const sonde = await cmd("Runtime.evaluate", { returnByValue: true, expression:
+      "JSON.stringify({ sqlite: Moteur.etat.version, tables: Moteur.nbTables(), ressources: performance.getEntriesByType('resource').length })" });
+    const vu = evenements.slice(borne);
+    const requetesHttp = vu.filter(e => e.method === "Network.requestWillBeSent").map(e => e.params.request.url.replace(site.url.replace(/\/requeter\.html$/, ""), ""));
+    const erreursHttp = vu.filter(e => e.method === "Runtime.exceptionThrown" || (e.method === "Runtime.consoleAPICalled" && e.params.type === "error")).map(e => JSON.stringify(e.params).slice(0, 200));
+    site.serveur.close();
+    const etat = sonde.result.result.value ? JSON.parse(sonde.result.result.value) : null;
+    const demarre = !!(etat && etat.sqlite && etat.tables === 5);
+    console.log(`\n--- ${nom} en HTTP (${site.url}) ---`);
+    console.log(`${demarre ? "✔" : "✘"} la page démarre bien quand elle est servie${demarre ? ` (SQLite ${etat.sqlite}, ${etat.tables} tables)` : "  → " + JSON.stringify(etat)}`);
+    const invariantHttp = requetesHttp.length === 1 && site.demandes.length === 1 && etat && etat.ressources === 0;
+    console.log(`${invariantHttp ? "✔" : "✘"} aucune requête réseau au-delà du document`
+      + `  (navigateur : ${requetesHttp.length} ${JSON.stringify(requetesHttp)} · serveur : ${site.demandes.length} ${JSON.stringify(site.demandes)}`
+      + ` · performance.resource : ${etat ? etat.ressources : "?"})`);
+    if (!demarre || !invariantHttp || erreursHttp.length) echecs++;
+    if (erreursHttp.length) console.log(`✘ erreurs console en HTTP : ${erreursHttp.join(" ; ")}`);
     ws.close();
   } finally {
     await terminer(proc, profil);

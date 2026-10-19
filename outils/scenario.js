@@ -510,6 +510,15 @@
   // bac à sable et hors ligne
   await aller("#/bac-a-sable");
   ok("bac à sable : aperçu exécuté (5 lignes)", document.querySelectorAll(".resultat tbody tr").length === 5);
-  ok("hors ligne : aucune ressource externe", performance.getEntriesByType("resource").length === 0 && document.querySelectorAll("link[href], script[src], img[src], iframe[src]").length === 0, performance.getEntriesByType("resource").map(x => x.name));
+  /* « Aucune ressource EXTERNE » : ce qui compte est qu'aucune référence ne sorte du document, pas qu'il n'y ait
+     aucune balise référençante. Une URL de données est inline — c'est le cas de l'icône vide déclarée pour que le
+     navigateur ne réclame pas /favicon.ico quand la page est servie (D070). La condition portait sur la PRÉSENCE
+     d'un link[href] et refusait donc cette icône, alors qu'elle est exactement ce qui fait tenir l'invariant. */
+  const refsExternes = [...document.querySelectorAll("link[href], script[src], img[src], iframe[src]")]
+    .map(e => e.getAttribute("href") || e.getAttribute("src"))
+    .filter(v => v && !/^data:/i.test(v));
+  ok("hors ligne : aucune ressource externe",
+    performance.getEntriesByType("resource").length === 0 && refsExternes.length === 0,
+    { ressources: performance.getEntriesByType("resource").map(x => x.name), refsExternes });
   return R;
 })()

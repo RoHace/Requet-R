@@ -1,0 +1,14 @@
+{
+  "name": "requet-r",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Apprendre le SQL en pratiquant : un seul fichier HTML, SQLite compile en WebAssembly, hors ligne.",
+  "license": "SEE LICENSE IN vendor/LICENSE-sql.js",
+  "repository": { "type": "git", "url": "https://github.com/RoHace/Requet-R.git" },
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "build": "node build.mjs",
+    "verifier": "node verifier-seed.mjs && node verifier-seed-sale.mjs && node verifier-comparateur.mjs && node verifier-progression.mjs && node verifier-autotest.mjs",
+    "navigateur": "node outils/cdp.cjs"
+  }
+}

@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FFF3DE">
+<!-- Icône vide déclarée exprès (D070) : sans ce lien, un navigateur qui sert la page en HTTP ou HTTPS
+     réclame /favicon.ico de lui-même — relevé sur Chrome et Edge. En file:// il ne le fait jamais, si bien
+     que l'invariant « aucune requête réseau » était vrai en local et faux une fois la page servie. Une URL
+     de données vide dit au navigateur qu'il n'y a rien à aller chercher. -->
+<link rel="icon" href="data:,">
 <title>Requêt'R — Apprendre le SQL en pratiquant</title>
 <style>
 /* ═══════════════════════════════════════════════════════════
