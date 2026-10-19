@@ -3493,8 +3493,8 @@ const CHAPITRES = [
 const PALIERS = [
   { id: "P1", titre: "Lire", termine: true },
   { id: "P2", titre: "Agréger", termine: true },
-  { id: "P3", titre: "Croiser", termine: false },
-  { id: "P4", titre: "Raisonner", termine: false },
+  { id: "P3", titre: "Croiser", termine: true },
+  { id: "P4", titre: "Raisonner", termine: true },
   { id: "P5", titre: "Métier", termine: false }
 ];
 
