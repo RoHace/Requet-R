@@ -2546,14 +2546,702 @@ const CONTENU = {
       exemple: "Pour une commande expediee, le même calcul mesure depuis combien de temps elle a quitté l'entrepôt sans encore être arrivée — déjà une question différente d'un « retard de livraison ».",
       explication: "julianday('2026-06-30') - julianday(date_commande) calcule toujours la même chose : le nombre de jours depuis que la commande a été PASSÉE. Pour une commande en_preparation, ce nombre dit depuis combien de temps elle attend d'être préparée — une information utile, mais pas un retard de livraison, puisqu'aucune expédition n'a encore eu lieu. Mesurer un véritable retard de livraison demanderait une date d'expédition, que cette base ne contient pas.",
       retenir: "Un calcul de délai ne vaut que par les deux dates qu'il compare : changer le statut d'une commande ne change rien à la formule, mais change entièrement le sens de son résultat."
+    },
+
+    /* ══ PALIER 5 — MÉTIER (lot 10, D068) ══════════════════════════════════════════════════════════════════
+       Deux compétences, et deux jeux de données. `nettoyer-donnees` (p5-01 à p5-23) travaille sur l'EXPORT BRUT
+       (`jeu: "export"`, src/seed-sale.sql, documenté dans SCHEMA-EXPORT.md) : ces exercices déclarent des
+       `anomalies` (A1 à A15), jamais des `pieges`, qui sont ceux du seed principal. `vocabulaire-metier`
+       (p5-24 à p5-38) travaille sur la boutique et déclare des `pieges` comme les paliers précédents.
+       Règle d'énoncé propre à ce palier : quand une question métier admet plusieurs lectures, `question` les
+       NOMME et dit qu'elles ne donnent pas la même réponse, puis `consigne` TRANCHE, au nom de quelqu'un.
+       La question fait sentir le choix, la consigne le ferme, et `explication` montre les autres chiffres. ══ */
+
+    /* ── ch-p5-1 · Un export brut : ce qu'on reçoit vraiment ──────────────────────────────────────────── */
+    {
+      id: "p5-01", type: "qcm", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Comprendre", difficulte: 1,
+      titre: "Comment ces saletés sont entrées",
+      question: "Dans export_clients, la même ville est écrite « Lyon », « LYON » et « lyon », un identifiant apparaît deux fois, et la colonne des points de fidélité contient « N/A ». Qu'est-ce qui a permis à tout cela d'entrer dans le fichier ?",
+      options: [
+        "Rien ne l'empêchait : aucune colonne n'a de contrainte, pas même une clé primaire, et le type TEXT accepte n'importe quelle valeur",
+        "Les données ont été abîmées au moment de l'export, elles étaient propres dans le système d'origine",
+        "SQLite a accepté ces valeurs parce que la base n'a pas été enregistrée correctement",
+        "C'est un défaut de SQLite : une autre base de données aurait refusé ces lignes"
+      ],
+      reponse: 0,
+      anomalies: ["A1"],
+      piste: "Regardez la colonne « Rôle » de chaque table dans le Schéma : que dit-elle sur chacune des colonnes de ce fichier ?",
+      clause: "CREATE TABLE",
+      exemple: "Dans la boutique, commandes.statut porte un CHECK qui n'accepte que cinq valeurs : y écrire « en cours » échoue. Ici, aucune colonne ne porte quoi que ce soit.",
+      explication: "Les quatre fichiers de l'export n'ont aucune clé primaire, aucune clé étrangère, aucun CHECK, aucun NOT NULL, et leurs 24 colonnes sont toutes déclarées TEXT. Une base ne refuse que ce qu'on lui a demandé de refuser : sans contrainte, elle enregistre « N/A » dans une colonne de nombres, le même identifiant deux fois et trois orthographes d'une même ville, sans jamais prévenir. Ce n'est pas un défaut de SQLite — la boutique, elle, refuse une commande dont le client n'existe pas, parce que quelqu'un l'a écrit dans son schéma.",
+      retenir: "Une base ne protège que ce qu'on lui a demandé de protéger. Devant un export sans contrainte, c'est à vous de vérifier ce que le schéma ne garantit pas — et il ne garantit rien."
+    },
+    {
+      id: "p5-02", type: "predire", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Deux fichiers pour une seule période",
+      question: "L'export des commandes est arrivé en deux fichiers, un par année. Le Schéma indique 18 lignes dans export_commandes_2025 et 14 dans export_commandes_2026. Sans l'exécuter : combien de lignes cette requête renvoie-t-elle ?",
+      requete: "SELECT * FROM export_commandes_2025\nUNION ALL\nSELECT * FROM export_commandes_2026;",
+      predit: "nbLignes",
+      anomalies: ["A15"],
+      piste: "UNION ALL empile les lignes du second résultat sous celles du premier, sans rien examiner.",
+      clause: "UNION ALL",
+      exemple: "Empiler une liste de 3 lignes et une liste de 4 lignes avec UNION ALL en donne 7, quoi que contiennent ces lignes.",
+      explication: "UNION ALL empile sans rien vérifier : 18 + 14 = 32. C'est exactement ce qu'on veut quand on rassemble deux fichiers… à condition qu'ils ne se recouvrent pas. Ici, deux commandes figurent dans LES DEUX fichiers (l'export a dédoublé la frontière d'année), et UNION ALL les compte donc deux fois : il n'y a en réalité que 30 commandes distinctes. Le chapitre sur UNION reviendra sur ce que le simple UNION, lui, sait retirer — et sur ce qu'il laisse passer.",
+      retenir: "UNION ALL additionne les lignes sans jamais regarder leur contenu : le total est toujours la somme exacte des deux, doublons compris."
+    },
+
+    /* ── ch-p5-2 · Quatre façons de ne rien dire ──────────────────────────────────────────────────────── */
+    {
+      id: "p5-03", type: "predire", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Ce que IS NOT NULL laisse passer",
+      question: "export_clients compte 20 lignes. Une seule a sa ville réellement vide (NULL) ; trois autres contiennent respectivement une chaîne vide, « N/A » et « -- ». Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ?",
+      requete: "SELECT COUNT(*) FROM export_clients WHERE ville IS NOT NULL;",
+      predit: "valeur",
+      anomalies: ["A10"],
+      piste: "IS NOT NULL ne juge qu'une chose : la valeur est-elle absente au sens de la base ? Une chaîne de caractères, même vide, même trompeuse, est une valeur présente.",
+      clause: "IS NULL",
+      exemple: "Pour SQLite, '' et 'N/A' sont des textes comme « Lyon » : ils ont une longueur, ils se comparent, ils ne sont pas NULL.",
+      explication: "Une seule ligne sur 20 est NULL, donc 19 passent le filtre. Les trois autres façons de ne rien dire — la chaîne vide, « N/A » et « -- » — sont des TEXTES pour la base : elles traversent IS NOT NULL sans difficulté, et se retrouveront dans vos regroupements comme si « N/A » était une ville. Le vrai compte des villes renseignées est 16, pas 19.",
+      retenir: "IS NOT NULL ne répond qu'à « la case est-elle vide au sens de la base ? ». Sur un export, la réponse à « la valeur est-elle utilisable ? » demande toujours d'écarter aussi les textes qui veulent dire « rien »."
+    },
+    {
+      id: "p5-04", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les clients dont on ignore la ville",
+      question: "Avant de lancer une campagne par région, on veut savoir pour combien de clients la ville est inexploitable. Dans ce fichier, « pas de ville » s'écrit de quatre façons : rien du tout (NULL), une chaîne vide, « N/A » et « -- ». Donnez la liste de ces clients.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant sans espace autour, puis le nom complet. Triés par identifiant croissant.",
+      solution: "SELECT TRIM(id) AS id, nom_complet FROM export_clients WHERE ville IS NULL OR TRIM(ville) IN ('', 'N/A', '--') ORDER BY id",
+      comparer: { ordonne: true },
+      anomalies: ["A10"],
+      piste: "Il faut réunir deux conditions de nature différente : l'absence au sens de la base (IS NULL) et une liste de textes qui veulent dire « rien ».",
+      clause: "IN",
+      exemple: "WHERE statut IS NULL OR TRIM(statut) IN ('', 'inconnu') réunirait de la même façon les deux manières d'ignorer un statut.",
+      explication: "Quatre clients sont concernés : 213 (NULL), 214 (chaîne vide), 215 (« N/A ») et 216 (« -- »). Le TRIM avant la comparaison n'est pas un détail : une valeur écrite « N/A » avec un espace devant ne serait pas trouvée par une égalité stricte. Un filtre qui n'aurait gardé que IS NULL n'aurait trouvé qu'un seul client sur quatre — et les trois autres seraient partis en campagne vers la ville « N/A ».",
+      retenir: "Sur un export, « la valeur manque » se demande toujours en deux temps : IS NULL d'un côté, et la liste des textes qui veulent dire « rien » de l'autre."
+    },
+    {
+      id: "p5-05", type: "corriger", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Un seul client sur quatre",
+      question: "Cette requête est censée lister les clients dont la ville est inexploitable, pour les écarter d'une campagne par région. Elle s'exécute, elle renvoie un résultat plausible, et elle en oublie les trois quarts.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant sans espace autour, puis le nom complet. Triés par identifiant croissant.",
+      depart: "SELECT TRIM(id) AS id, nom_complet FROM export_clients WHERE ville IS NULL ORDER BY id",
+      solution: "SELECT TRIM(id) AS id, nom_complet FROM export_clients WHERE ville IS NULL OR TRIM(ville) IN ('', 'N/A', '--') ORDER BY id",
+      comparer: { ordonne: true },
+      anomalies: ["A10"],
+      piste: "La requête ne trouve qu'une ligne. Ouvrez le fichier dans le Schéma et regardez la colonne ville des clients 214, 215 et 216 : qu'ont-elles de commun, et en quoi diffèrent-elles de celle du client 213 ?",
+      clause: "IS NULL",
+      exemple: "TRIM(ville) IN ('', 'N/A', '--') attrape les trois formes écrites ; IS NULL attrape la quatrième, celle qui n'est pas écrite du tout.",
+      explication: "IS NULL ne trouve que le client 213, le seul dont la case est réellement vide au sens de la base. Les clients 214 (chaîne vide), 215 (« N/A ») et 216 (« -- ») contiennent du TEXTE : pour SQLite, leur ville est renseignée. Rien ne signale l'erreur — la requête s'exécute, renvoie une ligne, et cette ligne est juste. C'est le résultat qui est incomplet, pas la requête qui est fausse, et c'est précisément ce qui rend ce genre d'oubli invisible.",
+      retenir: "Une requête qui renvoie moins de lignes que prévu ne se signale jamais : sur un export, vérifiez toujours ce que votre filtre a laissé passer, pas seulement ce qu'il a trouvé."
+    },
+
+    /* ── ch-p5-3 · Une ville, quatre orthographes ─────────────────────────────────────────────────────── */
+    {
+      id: "p5-06", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Combien de clients par ville, vraiment",
+      question: "Le service marketing veut savoir dans quelles villes se trouvent nos clients, pour y concentrer une campagne. L'export écrit les villes comme elles ont été saisies : « Lyon », « LYON », « lyon », parfois avec un espace devant ou derrière. Donnez le nombre de clients par ville, chaque ville comptée une seule fois.",
+      consigne: "Deux colonnes, dans cet ordre : la ville en majuscules et sans espace autour, puis le nombre de clients. Écartez les lignes dont la ville n'est pas renseignée, quelle que soit la façon dont elle ne l'est pas. Triées par nombre de clients décroissant, puis par ville croissante.",
+      solution: "SELECT UPPER(TRIM(ville)) AS ville, COUNT(*) AS clients FROM export_clients WHERE ville IS NOT NULL AND TRIM(ville) NOT IN ('', 'N/A', '--') GROUP BY UPPER(TRIM(ville)) ORDER BY clients DESC, ville",
+      comparer: { ordonne: true },
+      anomalies: ["A4", "A5", "A10"],
+      piste: "TRIM retire les espaces des deux bords, UPPER met tout en majuscules. Les deux ensemble donnent une forme unique pour une même ville — et c'est sur cette forme, pas sur la colonne brute, qu'il faut regrouper.",
+      clause: "TRIM",
+      exemple: "GROUP BY UPPER(TRIM(statut)) rangerait « livree », « Livree » et « LIVREE » dans un seul groupe au lieu de trois.",
+      explication: "Une fois ramenées à une forme unique, il ne reste que 6 villes : LYON 5, MARSEILLE 3, PARIS 3, BORDEAUX 2, LILLE 2, NANTES 1. Regroupées telles quelles, les mêmes 16 lignes donnent 14 villes apparentes, et LYON tombe à 2 clients — à égalité avec Paris, alors qu'elle en a deux fois et demie plus. La campagne n'aurait pas été lancée au même endroit. Le filtre sur les quatre façons de ne pas renseigner une ville écarte 4 lignes de plus : sans lui, « N/A » serait devenu une ville à part entière.",
+      retenir: "Avant de regrouper une colonne de texte saisie à la main, ramenez-la à une forme unique : UPPER(TRIM(colonne)). Sinon chaque manière d'écrire la même valeur devient un groupe, et le classement qui en sort est faux sans que rien ne le signale."
+    },
+    {
+      id: "p5-07", type: "corriger", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Aucune ville n'atteint trois clients",
+      question: "On cherche les villes où nous avons au moins trois clients, pour y ouvrir un point de retrait. Cette requête ne renvoie AUCUNE ligne — et pourtant une ville en compte cinq.",
+      consigne: "Deux colonnes, dans cet ordre : la ville en majuscules et sans espace autour, puis le nombre de clients, pour les seules villes qui comptent au moins 3 clients. Écartez les lignes dont la ville n'est pas renseignée. Triées par nombre de clients décroissant, puis par ville croissante.",
+      depart: "SELECT ville, COUNT(*) AS clients FROM export_clients WHERE ville IS NOT NULL AND TRIM(ville) NOT IN ('', 'N/A', '--') GROUP BY ville HAVING COUNT(*) >= 3 ORDER BY clients DESC, ville",
+      solution: "SELECT UPPER(TRIM(ville)) AS ville, COUNT(*) AS clients FROM export_clients WHERE ville IS NOT NULL AND TRIM(ville) NOT IN ('', 'N/A', '--') GROUP BY UPPER(TRIM(ville)) HAVING COUNT(*) >= 3 ORDER BY clients DESC, ville",
+      comparer: { ordonne: true },
+      anomalies: ["A4", "A5"],
+      piste: "Le HAVING est juste et le filtre est juste. Ce qui est faux, c'est ce sur quoi la requête regroupe.",
+      clause: "GROUP BY",
+      exemple: "Les cinq clients lyonnais sont répartis entre quatre groupes différents : aucun de ces groupes n'atteint 3 à lui seul.",
+      explication: "Les cinq clients de Lyon sont éparpillés sur quatre groupes — « Lyon » (2), « LYON », « lyon » et « Lyon » suivi d'un espace —, et le plus gros ne compte que 2 lignes : le HAVING COUNT(*) >= 3 les élimine tous. Une fois le regroupement fait sur UPPER(TRIM(ville)), trois villes passent le seuil : LYON 5, MARSEILLE 3 et PARIS 3. Un résultat VIDE est ici le symptôme le plus honnête qu'on pouvait espérer : il saute aux yeux. Le même défaut, sur un seuil plus bas, aurait rendu un classement plausible et silencieusement faux.",
+      retenir: "Un regroupement sur une colonne non normalisée éclate chaque valeur en autant de groupes qu'elle a d'orthographes : tous les comptes sont alors trop petits, et tout seuil posé dessus devient faux."
+    },
+    {
+      id: "p5-08", type: "predire", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Neuf, et pas six",
+      question: "On vient d'établir deux choses sur les 20 lignes de export_clients : il y a 6 villes réelles, et 4 façons d'écrire qu'il n'y en a pas (NULL, chaîne vide, « N/A » et « -- »). Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ?",
+      requete: "SELECT COUNT(DISTINCT UPPER(TRIM(ville))) FROM export_clients;",
+      predit: "valeur",
+      anomalies: ["A4", "A10"],
+      piste: "UPPER(TRIM(…)) réunit bien les orthographes d'une même ville — mais il ne transforme pas « N/A » en absence de valeur. Reste à savoir ce que COUNT(DISTINCT …) fait, lui, d'un NULL.",
+      clause: "DISTINCT",
+      exemple: "COUNT(DISTINCT ville) sur trois lignes valant 'Lyon', 'Lyon' et NULL renvoie 1, pas 2 : le NULL n'est jamais compté.",
+      explication: "La normalisation réunit les orthographes d'une même ville, et il reste 6 villes réelles. Mais « », « N/A » et « -- » restent trois valeurs distinctes de plus : 6 + 3 = 9. Le NULL, lui, n'est pas compté — COUNT(DISTINCT colonne) ignore les NULL comme toutes les fonctions d'agrégat —, sinon on en aurait trouvé 10. Nettoyer la casse et les espaces ne fait donc qu'une partie du travail : tant que les fausses valeurs ne sont pas écartées, elles continuent de compter comme des villes.",
+      retenir: "Normaliser la casse et les espaces ne supprime pas les fausses valeurs : « N/A » normalisé reste « N/A ». Les deux nettoyages sont indépendants, et il faut les deux."
+    },
+
+    /* ── ch-p5-4 · Des nombres qui n'en sont pas ──────────────────────────────────────────────────────── */
+    {
+      id: "p5-09", type: "qcm", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Comprendre", difficulte: 2,
+      titre: "Mille deux cents, ou un",
+      question: "Dans export_clients, le client 203 a « 1 200 » points de fidélité — un texte, avec une espace comme séparateur de milliers. Que renvoie SELECT '1 200' + 0 ?",
+      options: [
+        "1 : SQLite lit les caractères tant qu'ils forment un nombre, s'arrête à l'espace, et garde ce qu'il a lu",
+        "1200 : SQLite reconnaît le séparateur de milliers et le retire",
+        "0 : le texte n'étant pas un nombre valide, il est converti en zéro",
+        "Une erreur : on ne peut pas additionner un texte et un nombre"
+      ],
+      reponse: 0,
+      anomalies: ["A8"],
+      piste: "SQLite ne refuse jamais une addition entre un texte et un nombre : il convertit le texte, du mieux qu'il peut, et ne prévient pas de ce qu'il a dû abandonner.",
+      clause: "CAST",
+      exemple: "'12ans' + 0 vaut 12, 'ans12' + 0 vaut 0 : la conversion lit depuis le début et s'arrête au premier caractère qui ne convient plus.",
+      explication: "SQLite convertit en lisant les caractères depuis le début, tant qu'ils forment un nombre : « 1 », puis une espace, qui arrête tout. Le résultat est 1, et c'est le pire des cas — pas une erreur, pas un zéro, mais un nombre plausible qui a perdu 1199 points en silence. Les trois autres formes du fichier se comportent encore différemment : 'N/A' + 0, '' + 0 et '--' + 0 valent tous 0. Additionner la colonne telle quelle donne 735 points, là où le total réel est 1934.",
+      retenir: "SQLite convertit un texte en nombre sans jamais se plaindre : il lit ce qu'il peut et abandonne le reste. Une colonne de nombres stockée en texte donne donc des totaux faux, jamais des erreurs."
+    },
+    {
+      id: "p5-10", type: "corriger", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Le meilleur client absent de la liste",
+      question: "Cette requête cherche les clients à plus de 100 points de fidélité, pour leur envoyer une offre. Elle en trouve onze — et le client qui en a le plus n'en fait pas partie.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant sans espace autour, puis les points en nombre, une fois l'espace du séparateur de milliers retiré. Seulement les clients à plus de 100 points. Triés par points décroissants.",
+      depart: "SELECT TRIM(id) AS id, points_fidelite FROM export_clients WHERE points_fidelite > 100 ORDER BY points_fidelite DESC",
+      solution: "SELECT TRIM(id) AS id, CAST(REPLACE(points_fidelite, ' ', '') AS INTEGER) AS points FROM export_clients WHERE CAST(REPLACE(points_fidelite, ' ', '') AS INTEGER) > 100 ORDER BY points DESC",
+      comparer: { ordonne: true },
+      anomalies: ["A8", "A9"],
+      piste: "Les deux côtés de la comparaison ne sont pas du même type : à gauche du texte, à droite un nombre. Tant que la colonne n'est pas convertie, c'est l'ordre du dictionnaire qui décide, pas celui des nombres.",
+      clause: "CAST",
+      exemple: "Dans l'ordre du dictionnaire, « 9 » vient après « 100 » comme « z » vient après « ab » : on compare caractère par caractère, pas quantité par quantité.",
+      explication: "La colonne étant du texte, la comparaison se fait dans l'ordre du dictionnaire : « 9 », « 80 », « 60 » et même « N/A » passent devant « 100 », tandis que « 1 200 » — qui commence par « 1 » suivi d'une ESPACE — tombe avant. La requête de départ retient donc onze clients, dont beaucoup ont moins de 100 points, et laisse de côté le client 203, le seul à en avoir 1200. Une fois la colonne convertie, il ne reste que trois clients : 203 (1200), 217 (200) et 201 (120).",
+      retenir: "Comparer une colonne de texte à un nombre ne provoque aucune erreur : SQLite compare dans l'ordre du dictionnaire. Convertissez d'abord, filtrez ensuite — et le REPLACE doit précéder le CAST, sinon le séparateur de milliers tronque la valeur."
+    },
+    {
+      id: "p5-11", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le vrai total des points",
+      question: "La direction veut provisionner le coût des points de fidélité et demande leur total. Additionnée telle quelle, la colonne donne 735 — un chiffre qui ne veut rien dire, puisqu'elle contient du texte. Donnez le total réel.",
+      consigne: "Une seule colonne : la somme des points, une fois l'espace du séparateur de milliers retiré et la colonne convertie en nombre. Les valeurs qui ne sont pas des nombres (« N/A », « -- », la chaîne vide) comptent pour 0, et le client à points négatifs est conservé tel quel.",
+      solution: "SELECT SUM(CAST(REPLACE(points_fidelite, ' ', '') AS INTEGER)) FROM export_clients",
+      comparer: {},
+      anomalies: ["A8"],
+      piste: "REPLACE retire l'espace, CAST convertit ce qui reste. L'ordre des deux compte : convertir d'abord reviendrait à tronquer avant d'avoir réparé.",
+      clause: "REPLACE",
+      exemple: "CAST(REPLACE('1 200', ' ', '') AS INTEGER) vaut 1200 ; CAST('1 200' AS INTEGER), lui, vaut 1.",
+      explication: "Le total réel est de 1934 points, soit 1199 de plus que les 735 qu'affiche une somme directe — tout l'écart vient d'une seule ligne, celle du client 203 et de son séparateur de milliers. Les trois non-valeurs (« N/A », « -- » et la chaîne vide) comptent pour 0 dans les deux cas, et les −50 points du client 208 restent comptés : une valeur négative est absurde pour des points de fidélité, mais c'est un problème de cohérence, pas de conversion, et on ne le règle pas en silence au milieu d'un calcul.",
+      retenir: "Réparez le texte AVANT de le convertir, jamais l'inverse : REPLACE puis CAST. Et une somme qui change du tout au tout après nettoyage est la preuve que la somme d'avant était une illusion."
+    },
+
+    /* ── ch-p5-5 · Des dates dans tous les formats ────────────────────────────────────────────────────── */
+    {
+      id: "p5-12", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les dates que SQLite ne sait pas lire",
+      question: "Avant de calculer des anciennetés, on veut savoir sur quelles lignes on ne pourra pas compter. SQLite ne reconnaît comme date que le format AAAA-MM-JJ : tout le reste lui est illisible. Donnez la liste des clients dont la date d'inscription est dans ce cas.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant sans espace autour, puis la date d'inscription telle qu'elle est écrite dans le fichier. Triés par identifiant croissant.",
+      solution: "SELECT TRIM(id) AS id, date_inscription FROM export_clients WHERE date(date_inscription) IS NULL ORDER BY id",
+      comparer: { ordonne: true },
+      anomalies: ["A6"],
+      piste: "date(valeur) renvoie la date si elle sait la lire, et NULL sinon. C'est donc un test de lisibilité autant qu'une conversion.",
+      clause: "date",
+      exemple: "date('2025-03-12') renvoie '2025-03-12' ; date('12/03/2025') renvoie NULL, sans erreur ni avertissement.",
+      explication: "Cinq clients sur vingt portent une date que SQLite ne sait pas lire : 202 (12/04/2024), 204 (2024/06/18), 207 (14 mars 2025), 211 (31/02/2025) et 216 (« inconnue »). Quatre formats différents, et aucun ne provoque d'erreur : date() renvoie simplement NULL. C'est le piège de ces colonnes — un calcul d'ancienneté sur ce fichier ne planterait pas, il écarterait silencieusement un quart des clients, et la moyenne obtenue ne porterait que sur les quinze autres.",
+      retenir: "date(colonne) IS NULL est le contrôle à passer sur toute colonne de dates venue d'un export : il répond à « sur combien de lignes puis-je réellement calculer ? » avant que la réponse ne vous soit cachée par un NULL."
+    },
+    {
+      id: "p5-13", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Remettre une date française dans le bon ordre",
+      question: "Deux clients ont leur date d'inscription au format français, jj/mm/aaaa. Reconstruisez-la au format que SQLite comprend, AAAA-MM-JJ, en déplaçant les morceaux.",
+      consigne: "Trois colonnes, dans cet ordre : l'identifiant sans espace autour, la date telle qu'elle est écrite, puis la date reconstruite en AAAA-MM-JJ. Seulement les lignes au format jj/mm/aaaa. Triées par identifiant croissant.",
+      solution: "SELECT TRIM(id) AS id, date_inscription, substr(date_inscription, 7, 4) || '-' || substr(date_inscription, 4, 2) || '-' || substr(date_inscription, 1, 2) AS iso FROM export_clients WHERE date_inscription LIKE '__/__/____' ORDER BY id",
+      comparer: { ordonne: true },
+      anomalies: ["A6", "A7"],
+      piste: "substr(texte, départ, longueur) prend un morceau d'un texte à une position donnée ; || colle deux textes bout à bout. Dans jj/mm/aaaa, l'année commence au 7ᵉ caractère.",
+      clause: "substr",
+      exemple: "Le motif LIKE '__/__/____' décrit exactement huit caractères quelconques et deux barres obliques aux bonnes places : le tiret bas remplace un caractère, et un seul.",
+      explication: "Les deux lignes sont celles des clients 202 (12/04/2024 → 2024-04-12) et 211 (31/02/2025 → 2025-02-31). La reconstruction est purement mécanique : elle déplace des caractères, elle ne vérifie rien. La seconde date en est la preuve — le 31 février n'existe pas, et la date « réparée » 2025-02-31 est tout aussi fausse qu'avant, simplement dans un format que SQLite accepte désormais de lire. C'est ce que l'exercice suivant montre.",
+      retenir: "Reconstruire une date, c'est déplacer des caractères : le résultat a le bon format, ce qui ne veut pas dire qu'il désigne un jour qui existe."
+    },
+    {
+      id: "p5-14", type: "qcm", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Comprendre", difficulte: 3,
+      titre: "Le 31 février",
+      question: "Le client 211 s'est inscrit le « 31/02/2025 ». Remise au format AAAA-MM-JJ, cette date devient '2025-02-31'. Que renvoie SELECT date('2025-02-31') ?",
+      options: [
+        "'2025-03-03' : SQLite accepte le format, compte 31 jours à partir du 1ᵉʳ février et tombe trois jours après la fin du mois",
+        "NULL : la date est impossible, SQLite refuse de la lire",
+        "'2025-02-31' : SQLite rend la date telle quelle, sans la valider",
+        "'2025-02-28' : SQLite ramène la date au dernier jour réel du mois"
+      ],
+      reponse: 0,
+      anomalies: ["A7"],
+      piste: "SQLite ne vérifie pas qu'un jour existe : il le compte. Février 2025 a 28 jours — que se passe-t-il quand on en demande 31 ?",
+      clause: "date",
+      exemple: "date('2025-02-29') renvoie '2025-03-01' : le jour qui n'existe pas est simplement compté à partir du premier du mois.",
+      explication: "SQLite accepte le format et calcule : 31 jours à partir du 1ᵉʳ février 2025, c'est le 3 mars. La date d'inscription du client 211 devient donc valide, lisible, utilisable dans n'importe quel calcul — et fausse de trois jours, sans le moindre signal. C'est le cas le plus dangereux de tout ce fichier : une date illisible se repère (date() renvoie NULL), une date silencieusement décalée ne se repère plus du tout une fois la réparation faite. La seule parade est de contrôler AVANT de réparer que le jour et le mois sont plausibles.",
+      retenir: "Une date mal formée se repère ; une date impossible que l'on a reformatée ne se repère plus. Vérifiez la validité avant de convertir, pas après."
+    },
+
+    /* ── ch-p5-6 · Les doublons : la même entité deux fois ────────────────────────────────────────────── */
+    {
+      id: "p5-15", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Un identifiant pour deux lignes",
+      question: "Dans ce fichier, rien ne garantit qu'un identifiant de client ne serve qu'une fois : il n'y a pas de clé primaire. Trouvez les identifiants qui apparaissent sur plus d'une ligne, et sur combien.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant sans espace autour, puis le nombre de lignes qui le portent. Seulement les identifiants présents plus d'une fois.",
+      solution: "SELECT TRIM(id) AS id, COUNT(*) AS lignes FROM export_clients GROUP BY TRIM(id) HAVING COUNT(*) > 1",
+      comparer: {},
+      anomalies: ["A2"],
+      piste: "Regrouper sur l'identifiant puis ne garder que les groupes de plus d'une ligne : c'est le contrôle de doublon le plus courant, et il s'écrit toujours de la même façon.",
+      clause: "HAVING",
+      exemple: "GROUP BY email HAVING COUNT(*) > 1 poserait exactement la même question sur une autre colonne.",
+      explication: "Un seul identifiant est en double : le 204, sur deux lignes. Les deux disent la même personne, Lise Petit, mais pas tout à fait de la même façon — l'adresse est écrite en majuscules sur l'une, en minuscules sur l'autre, et la date d'inscription est au format AAAA/MM/JJ d'un côté, AAAA-MM-JJ de l'autre. C'est la forme la plus courante du doublon réel : deux saisies de la même chose, à des détails près, qu'aucune contrainte n'a empêchées puisqu'il n'y en a aucune.",
+      retenir: "GROUP BY colonne HAVING COUNT(*) > 1 est le contrôle de doublon standard. Sur un export sans clé primaire, il se passe sur l'identifiant lui-même — c'est le seul moyen de savoir s'il identifie réellement quelque chose."
+    },
+    {
+      id: "p5-16", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 3,
+      titre: "La même personne sous deux identifiants",
+      question: "Un identifiant en double se repère facilement. Le cas inverse est plus traître : la même personne enregistrée DEUX FOIS, sous deux identifiants différents. L'adresse électronique est ce qui les trahit — à condition de ne pas la comparer telle quelle. Trouvez les adresses présentes sur plus d'une ligne.",
+      consigne: "Deux colonnes, dans cet ordre : l'adresse en minuscules et sans espace autour, puis le nombre de lignes qui la portent. Seulement les adresses présentes plus d'une fois. Triées par adresse croissante.",
+      solution: "SELECT LOWER(TRIM(email)) AS email, COUNT(*) AS lignes FROM export_clients GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1 ORDER BY email",
+      comparer: { ordonne: true },
+      anomalies: ["A3", "A2"],
+      piste: "Deux adresses qui ne diffèrent que par la casse désignent la même boîte : il faut donc regrouper sur une forme normalisée, pas sur la colonne brute.",
+      clause: "LOWER",
+      exemple: "'Hugo.Robert@exemple.test' et 'hugo.robert@exemple.test' sont deux textes différents pour SQLite, et une seule et même adresse pour le facteur.",
+      explication: "Deux adresses apparaissent deux fois. Celle de lise.petit@exemple.test correspond au doublon d'identifiant déjà trouvé (204 deux fois). Celle de hugo.robert@exemple.test est le cas intéressant : elle est portée par DEUX identifiants différents, 205 et 206 — la même personne, enregistrée deux fois, sous « Hugo Robert » et « HUGO ROBERT ». Sans la normalisation, aucune des deux n'aurait été trouvée. Le fichier contient donc 20 lignes, 19 identifiants et 18 personnes réelles.",
+      retenir: "Un doublon ne se cherche presque jamais sur la colonne brute : il se cherche sur la forme normalisée de ce qui identifie vraiment l'entité — une adresse en minuscules, un nom sans espaces, un numéro sans séparateurs."
+    },
+    {
+      id: "p5-17", type: "corriger", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Vingt lignes ne font pas vingt clients",
+      question: "On demande combien de clients contient l'export. Cette requête répond 20 — c'est le nombre de lignes du fichier, pas le nombre de clients.",
+      consigne: "Une seule colonne : le nombre d'identifiants de client DISTINCTS, les espaces autour de l'identifiant mis de côté.",
+      depart: "SELECT COUNT(*) FROM export_clients",
+      solution: "SELECT COUNT(DISTINCT TRIM(id)) FROM export_clients",
+      comparer: {},
+      anomalies: ["A2", "A5"],
+      piste: "Une ligne n'est pas un client : il faut compter les identifiants distincts, et le TRIM n'est pas facultatif — l'un des identifiants porte un espace de tête.",
+      clause: "COUNT",
+      exemple: "COUNT(*) compte les lignes ; COUNT(DISTINCT colonne) compte les valeurs différentes de cette colonne, NULL exclus.",
+      explication: "Le fichier a 20 lignes pour 19 identifiants distincts : l'identifiant 204 en occupe deux. Et le compte n'est juste qu'avec le TRIM — l'identifiant du client 208 est écrit avec un espace de tête, « 208 » et « 208 » seraient comptés séparément sans lui. Même 19 n'est d'ailleurs pas le nombre de personnes : les identifiants 205 et 206 désignent le même Hugo Robert, ce qui en fait 18. Trois réponses selon ce qu'on appelle « un client » — et c'est à la question qu'il faut revenir, pas au SQL.",
+      retenir: "Le nombre de lignes d'un export n'est jamais le nombre d'entités qu'il décrit. Comptez ce qui identifie l'entité, sous sa forme normalisée, et dites laquelle des trois réponses vous donnez."
+    },
+
+    /* ── ch-p5-7 · Les contrôles de cohérence ─────────────────────────────────────────────────────────── */
+    {
+      id: "p5-18", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Livrée avant d'avoir été passée",
+      question: "Deux colonnes d'un même fichier peuvent être valides chacune de son côté et se contredire ensemble. Trouvez les commandes dont la date de livraison précède la date de commande, sur les deux fichiers réunis.",
+      consigne: "Trois colonnes, dans cet ordre : l'identifiant de la commande, la date de commande, la date de livraison. Ne considérez que les lignes dont les deux dates sont lisibles par SQLite. Triées par identifiant croissant.",
+      solution: "SELECT id, date_commande, date_livraison FROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026) WHERE date(date_commande) IS NOT NULL AND date(date_livraison) IS NOT NULL AND date_livraison < date_commande ORDER BY id",
+      comparer: { ordonne: true },
+      anomalies: ["A11"],
+      piste: "Les deux fichiers s'empilent avec UNION ALL, et le résultat se met entre parenthèses pour servir de source au FROM. Le reste est une comparaison entre deux colonnes de la même ligne.",
+      clause: "UNION ALL",
+      exemple: "WHERE date_fin < date_debut est le contrôle de cohérence le plus simple qui soit : il ne compare pas une colonne à une constante, mais deux colonnes entre elles.",
+      explication: "Deux commandes sont incohérentes : la 5009, passée le 29 juin 2025 et « livrée » le 21 juin, et la 5025, passée le 5 mai 2026 et livrée le 2 mai. Chacune des quatre dates est parfaitement valide prise isolément — c'est leur rapprochement qui révèle le problème. Le filtre sur la lisibilité n'est pas une précaution de style : une date illisible rend la comparaison NULL, donc jamais vraie, et ces lignes disparaîtraient du contrôle sans qu'on sache qu'elles n'ont pas été examinées.",
+      retenir: "Un contrôle de cohérence compare deux colonnes de la même ligne, pas une colonne à une constante. Et il faut toujours savoir combien de lignes il n'a PAS pu examiner."
+    },
+    {
+      id: "p5-19", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les lignes à écarter avant tout calcul",
+      question: "Avant de calculer quoi que ce soit sur les commandes, on dresse la liste des lignes dont on sait déjà qu'elles sont fausses : celles dont le statut ne fait pas partie des cinq valeurs attendues (livree, expediee, annulee, retournee, en_preparation), et celles dont le montant est négatif.",
+      consigne: "Trois colonnes, dans cet ordre : l'identifiant de la commande, le statut et le montant, tels qu'ils sont écrits. Le statut est reconnu quelles que soient sa casse et ses espaces ; le montant se lit en remplaçant la virgule par un point et en retirant les espaces. Triées par identifiant croissant.",
+      solution: "SELECT id, statut, montant FROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026) WHERE LOWER(TRIM(statut)) NOT IN ('livree', 'expediee', 'annulee', 'retournee', 'en_preparation') OR CAST(REPLACE(REPLACE(montant, ' ', ''), ',', '.') AS REAL) < 0 ORDER BY id",
+      comparer: { ordonne: true },
+      anomalies: ["A12", "A14"],
+      piste: "Deux contrôles indépendants réunis par OR : une valeur hors de la liste attendue d'un côté, une valeur impossible de l'autre.",
+      clause: "NOT IN",
+      exemple: "LOWER(TRIM(statut)) NOT IN (…) ne se trompe ni sur « LIVREE » ni sur « livree » suivi d'un espace : c'est la forme normalisée qui est confrontée à la liste.",
+      explication: "Trois lignes ressortent : la 5008, dont le statut « en cours » n'existe pas dans le système d'origine ; la 5016, dont le statut est une chaîne vide ; et la 5010, dont le montant est de −30,00 €. Aucune n'aurait pu entrer dans la boutique, où le statut porte un CHECK qui n'autorise que cinq valeurs — mais l'export n'a aucune contrainte, et personne n'a jamais relu ces lignes. Les écarter est une décision à prendre AVANT de calculer, et à écrire noir sur blanc : un chiffre d'affaires calculé sur ce fichier doit dire ce qu'il a exclu.",
+      retenir: "Une colonne de valeurs énumérées n'est garantie que si un CHECK la garantit. Sur un export, la liste des valeurs attendues est à vous : confrontez-y la forme normalisée, et comptez ce qui en sort."
+    },
+    {
+      id: "p5-20", type: "corriger", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Deux orphelines qui n'en sont pas",
+      question: "Cette requête cherche les commandes dont le client n'existe pas dans export_clients — un contrôle indispensable, puisque aucune clé étrangère ne le garantit. Elle en trouve cinq. Il n'y en a que trois : deux des lignes accusées désignent un client qui existe bel et bien.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant de la commande et l'identifiant de client qu'elle porte. Seulement les commandes dont le client est introuvable, les espaces autour des identifiants mis de côté des deux côtés de la jointure. Triées par identifiant de commande croissant.",
+      depart: "SELECT o.id, o.client_id FROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026) o LEFT JOIN export_clients c ON c.id = o.client_id WHERE c.id IS NULL ORDER BY o.id",
+      solution: "SELECT o.id, o.client_id FROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026) o LEFT JOIN export_clients c ON TRIM(c.id) = TRIM(o.client_id) WHERE c.id IS NULL ORDER BY o.id",
+      comparer: { ordonne: true },
+      anomalies: ["A13", "A5"],
+      piste: "La requête accuse les commandes 5009 et 5030, qui portent toutes deux le client « 208 ». Cherchez ce client dans export_clients, et regardez très exactement comment son identifiant est écrit.",
+      clause: "ON",
+      exemple: "'208' et ' 208' sont deux textes différents : une égalité entre les deux est fausse, et une jointure qui s'appuie dessus ne rapproche rien.",
+      explication: "Le client 208 existe, mais son identifiant est écrit avec un espace de tête — « 208 » dans le fichier des clients, « 208 » dans celui des commandes. La jointure brute ne les rapproche pas, et les deux commandes de ce client, les 5009 et 5030, sont accusées à tort. Une fois les deux côtés normalisés, il ne reste que trois vraies orphelines : la 5003 (client « 999 », qui n'existe nulle part), la 5013 (identifiant de client vide) et la 5024 (client « 888 »). Un espace invisible aura donc fait doubler le nombre d'anomalies signalées — et dans l'autre sens, sur un rapprochement de facturation, il aurait fait disparaître deux commandes d'un client bien réel.",
+      retenir: "Une jointure entre deux fichiers d'un export se fait toujours sur des clés normalisées des DEUX côtés. Un espace invisible d'un seul côté suffit à inventer des orphelins, ou à en cacher."
+    },
+
+    /* ── ch-p5-8 · UNION : empiler deux fichiers ──────────────────────────────────────────────────────── */
+    {
+      id: "p5-21", type: "predire", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Ce que UNION retire, et ce qu'il garde",
+      question: "Les deux fichiers de commandes se recouvrent : les commandes 5017 et 5018 figurent dans les deux. L'une y est recopiée à l'identique, caractère pour caractère ; l'autre diffère d'un seul espace, à la fin de son statut. UNION ALL en renvoie 32. Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ?",
+      requete: "SELECT COUNT(*) FROM (\n  SELECT * FROM export_commandes_2025\n  UNION\n  SELECT * FROM export_commandes_2026\n);",
+      predit: "valeur",
+      anomalies: ["A15"],
+      piste: "UNION ne retire une ligne que si elle est en tout point identique à une autre. Sur les deux lignes présentes en double, combien remplissent cette condition ?",
+      clause: "UNION",
+      exemple: "UNION compare les lignes entières, colonne par colonne : il suffit qu'une seule valeur diffère, fût-ce d'un espace, pour que les deux lignes soient considérées comme différentes.",
+      explication: "UNION retire la commande 5017, recopiée à l'identique dans les deux fichiers : 32 − 1 = 31. Il GARDE en revanche les deux exemplaires de la 5018, parce que son statut vaut « livree » dans un fichier et « livree » suivi d'un espace dans l'autre — un caractère invisible suffit à faire deux lignes différentes. Il reste donc 31 lignes pour 30 commandes réelles. En nettoyant le statut avant d'empiler, on retombe bien sur 30.",
+      retenir: "UNION ne dédoublonne que les lignes strictement identiques. Sur des données sales, il faut normaliser AVANT d'empiler, sans quoi il laisse passer exactement les doublons qu'on comptait sur lui pour retirer."
+    },
+    {
+      id: "p5-22", type: "requete", jeu: "export",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le doublon que UNION n'a pas vu",
+      question: "Après avoir empilé les deux fichiers avec UNION, il reste une commande présente deux fois. Trouvez laquelle, et sur combien de lignes.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant de la commande et le nombre de lignes qui le portent. Seulement les identifiants présents plus d'une fois après le UNION.",
+      solution: "SELECT id, COUNT(*) AS lignes FROM (SELECT * FROM export_commandes_2025 UNION SELECT * FROM export_commandes_2026) GROUP BY id HAVING COUNT(*) > 1",
+      comparer: {},
+      anomalies: ["A15", "A4"],
+      piste: "Le UNION se place à l'intérieur du FROM, entre parenthèses ; le contrôle de doublon habituel se pose ensuite dessus.",
+      clause: "UNION",
+      exemple: "GROUP BY id HAVING COUNT(*) > 1 posé sur le résultat d'un UNION répond à « qu'est-ce que le dédoublonnage n'a pas attrapé ? ».",
+      explication: "C'est la commande 5018, sur deux lignes. Son statut vaut « livree » dans le fichier de 2025 et « livree » suivi d'un espace dans celui de 2026 : pour UNION, ce sont deux lignes différentes, et il les conserve toutes les deux. Un espace final ne se voit nulle part — ni dans le fichier, ni à l'écran, ni dans un message d'erreur : il ne se trouve qu'en interrogeant les données. C'est pourquoi le dédoublonnage ne se délègue jamais entièrement à UNION : on normalise d'abord les colonnes de texte, et on empile ensuite.",
+      retenir: "Après un UNION sur des données sales, repassez un contrôle de doublon sur la clé : ce qu'il trouve encore, c'est exactement ce que la normalisation a oublié de faire avant."
+    },
+    {
+      id: "p5-23", type: "requete",
+      niveau: "P5", competence: "nettoyer-donnees", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les clients qui ne sont pas revenus",
+      question: "Retour sur la base propre de la boutique. Empiler deux ensembles n'est pas le seul usage de ces opérateurs : INTERSECT garde ce qui est dans les deux, EXCEPT garde ce qui est dans le premier et pas dans le second. Donnez les clients qui ont commandé en 2025 et qui n'ont rien commandé en 2026.",
+      consigne: "Deux colonnes, dans cet ordre : l'identifiant du client et son nom. Tous statuts de commande confondus. Triés par identifiant croissant.",
+      solution: "SELECT c.id, c.nom FROM clients c WHERE c.id IN (SELECT client_id FROM commandes WHERE strftime('%Y', date_commande) = '2025' EXCEPT SELECT client_id FROM commandes WHERE strftime('%Y', date_commande) = '2026') ORDER BY c.id",
+      comparer: { ordonne: true },
+      pieges: ["P6"],
+      piste: "EXCEPT travaille sur deux listes de valeurs : celle des clients de 2025 et celle des clients de 2026. Le résultat sert ensuite à filtrer la table des clients.",
+      clause: "EXCEPT",
+      exemple: "Le même calcul avec INTERSECT à la place de EXCEPT donnerait les clients fidèles, présents les deux années.",
+      explication: "Huit clients ont commandé en 2025 sans revenir en 2026 : 201, 202, 203, 207, 208, 232, 233 et 234. Les trois opérateurs répondent à trois questions différentes sur les mêmes deux listes : UNION donne les 34 clients qui ont commandé au moins une fois sur la période, INTERSECT les 20 qui ont commandé les deux années, EXCEPT les 8 perdus de vue. Noter que 28 + 26 = 54 n'a aucun sens ici : c'est le total des deux listes, doublons compris, et 34 est le nombre réel de clients concernés.",
+      retenir: "UNION, INTERSECT et EXCEPT comparent deux listes de lignes : « au moins une des deux », « les deux », « la première sans la seconde ». Ce sont des questions d'ensemble, pas des jointures."
+    },
+
+    /* ── ch-p5-9 · « Le chiffre d'affaires » : une question, cinq chiffres ─────────────────────────────── */
+    {
+      id: "p5-24", type: "qcm",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Comprendre", difficulte: 1,
+      titre: "« Donne-moi le chiffre d'affaires »",
+      question: "La direction demande le chiffre d'affaires de la boutique. Sur cette base, selon ce qu'on inclut, on obtient 16 233,50 €, 12 724,50 €, 12 387,00 €, 12 619,00 € ou 11 490,00 €. Que faut-il faire ?",
+      options: [
+        "Demander quels statuts de commande sont comptés et si les frais de port en font partie : sans ces deux réponses, la question n'a pas de réponse unique",
+        "Donner 16 233,50 € : c'est le total de toutes les commandes, donc le chiffre le plus complet",
+        "Donner 11 490,00 € : seules les commandes livrées ont réellement rapporté de l'argent",
+        "Donner les cinq chiffres et laisser la direction choisir celui qui l'arrange"
+      ],
+      reponse: 0,
+      pieges: ["P7"],
+      piste: "Les cinq chiffres sont tous exacts. Ce qui les sépare n'est pas un calcul, ce sont deux décisions que la question ne prend pas.",
+      clause: "WHERE",
+      exemple: "Entre « toutes commandes confondues » et « sans les annulées ni les retournées », l'écart est de 3 846,50 € — presque un quart du total.",
+      explication: "Les cinq chiffres correspondent à cinq définitions, toutes défendables : tous statuts (16 233,50), hors annulées (12 724,50), ni annulées ni retournées (12 387,00, ce que ce cours appelle le chiffre d'affaires PRODUITS), le même plus les frais de port (12 619,00, le chiffre d'affaires TOTAL), et les livrées seules (11 490,00). Rendre la question décidable demande deux réponses : quels statuts compte-t-on, et les frais de port font-ils partie du chiffre d'affaires ? Donner les cinq chiffres n'est pas une réponse non plus — c'est renvoyer la décision à quelqu'un qui n'a pas les éléments pour la prendre, alors qu'une question suffit à la trancher.",
+      retenir: "« Le chiffre d'affaires » n'existe pas : il existe des chiffres d'affaires, qui diffèrent par ce qu'ils incluent. Faites préciser le périmètre avant d'écrire la requête, et écrivez-le à côté du résultat."
+    },
+    {
+      id: "p5-25", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le chiffre d'affaires produits, par année",
+      question: "Le contrôle de gestion a tranché : ce qui l'intéresse, c'est l'argent des marchandises effectivement vendues et conservées par le client — ni les commandes annulées, ni celles qui sont revenues, et sans les frais de port, qui ne sont pas du chiffre d'affaires mais une refacturation du transport. Donnez ce montant pour chaque année.",
+      consigne: "Deux colonnes, dans cet ordre : l'année sur quatre chiffres et le chiffre d'affaires produits de cette année, c'est-à-dire la somme des quantités multipliées par le prix unitaire facturé, sur les commandes qui ne sont ni annulee ni retournee. Triées par année croissante.",
+      solution: "SELECT strftime('%Y', o.date_commande) AS annee, SUM(l.quantite * l.prix_unitaire) AS ca FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY annee ORDER BY annee",
+      comparer: { ordonne: true },
+      pieges: ["P7"],
+      piste: "Le montant d'une ligne est quantite × prix_unitaire ; c'est la table des commandes, et non celle des lignes, qui porte le statut et la date.",
+      clause: "SUM",
+      exemple: "NOT IN ('annulee', 'retournee') écarte deux statuts d'un coup ; <> 'annulee' n'en écarterait qu'un.",
+      explication: "9 022,50 € en 2025 et 3 364,50 € en 2026, soit 12 387,00 € sur toute la période. Le prix retenu est prix_unitaire, celui qui a été FACTURÉ au moment de la vente, et non produits.prix, qui est le prix d'aujourd'hui : c'est l'argent réellement encaissé qu'on mesure, pas ce que les mêmes articles coûteraient maintenant. Écarter les retournées est une décision : la marchandise est revenue, l'argent aussi, et la commande n'a donc rien rapporté — mais une direction commerciale pourrait légitimement vouloir les compter pour mesurer ce qui a été VENDU, et obtiendrait alors 12 724,50 €.",
+      retenir: "Le chiffre d'affaires produits se calcule au prix facturé, sur les commandes ni annulées ni retournées, frais de port exclus. Chacun de ces trois mots est une décision — et la requête doit la refléter."
+    },
+    {
+      id: "p5-26", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le même calcul, tous statuts confondus",
+      question: "La direction commerciale ne mesure pas la même chose que le contrôle de gestion : elle veut savoir ce que ses équipes ont fait ENTRER comme commandes, quel que soit ce que ces commandes sont devenues ensuite. Reprenez le calcul précédent sans aucun filtre sur le statut.",
+      consigne: "Deux colonnes, dans cet ordre : l'année sur quatre chiffres et la somme des quantités multipliées par le prix unitaire facturé, sur TOUTES les commandes. Triées par année croissante.",
+      solution: "SELECT strftime('%Y', o.date_commande) AS annee, SUM(l.quantite * l.prix_unitaire) AS ca FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id GROUP BY annee ORDER BY annee",
+      comparer: { ordonne: true },
+      pieges: ["P7"],
+      piste: "Un seul élément de la requête précédente disparaît. Tout le reste est identique.",
+      clause: "GROUP BY",
+      exemple: "Retirer un WHERE ne change pas la forme d'un calcul : il change la population sur laquelle il porte.",
+      explication: "10 955,50 € en 2025 et 5 278,00 € en 2026, soit 16 233,50 € — 3 846,50 € de plus que le chiffre d'affaires produits, presque un quart. L'écart ne vient d'aucune erreur : il vient de ce que les deux services n'appellent pas la même chose « chiffre d'affaires ». L'un mesure l'argent conservé, l'autre l'activité commerciale produite. Les deux chiffres sont justes, ils ne répondent simplement pas à la même question — et c'est pour cela qu'un chiffre communiqué sans sa définition ne vaut rien.",
+      retenir: "Deux services peuvent demander « le chiffre d'affaires » et attendre deux nombres différents, tous deux exacts. Ce qui doit accompagner un résultat, c'est la phrase qui dit ce qu'il compte."
+    },
+    {
+      id: "p5-27", type: "corriger",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "« Sauf les annulées »",
+      question: "On a demandé le chiffre d'affaires produits par année — celui qui exclut les commandes annulées ET les commandes retournées. Cette requête n'en exclut qu'une sorte. Elle s'exécute, et ses deux nombres sont parfaitement plausibles.",
+      consigne: "Deux colonnes, dans cet ordre : l'année sur quatre chiffres et la somme des quantités multipliées par le prix unitaire facturé, sur les commandes qui ne sont ni annulee ni retournee. Triées par année croissante.",
+      depart: "SELECT strftime('%Y', o.date_commande) AS annee, SUM(l.quantite * l.prix_unitaire) AS ca FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY annee ORDER BY annee",
+      solution: "SELECT strftime('%Y', o.date_commande) AS annee, SUM(l.quantite * l.prix_unitaire) AS ca FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY annee ORDER BY annee",
+      comparer: { ordonne: true },
+      pieges: ["P7"],
+      piste: "Cinq statuts existent dans cette base. Écrire « différent de annulee » en laisse entrer quatre — dont un que la consigne demandait d'écarter.",
+      clause: "NOT IN",
+      exemple: "Cinq commandes sont retournees : elles ont été livrées, puis renvoyées, et remboursées. <> 'annulee' les garde toutes.",
+      explication: "Le départ donne 9 253,00 € et 3 471,50 €, contre 9 022,50 € et 3 364,50 € pour la bonne requête : 337,50 € d'écart, soit 2,7 %. Rien n'attire l'œil — les ordres de grandeur sont les mêmes, l'évolution entre les deux années aussi. L'erreur tient à une habitude de langage : « sauf les annulées » semble couvrir tout ce qui n'a pas abouti, alors que la base distingue deux façons de ne pas aboutir, l'annulation avant envoi et le retour après livraison. Un écart de 2,7 % sur un chiffre communiqué chaque mois est exactement le genre d'erreur qui survit des années.",
+      retenir: "Quand une colonne énumère plusieurs valeurs, un filtre par la négative n'en écarte qu'une : listez ce que vous gardez, ou listez tout ce que vous écartez. « Différent de » est rarement ce que le métier voulait dire."
+    },
+
+    /* ── ch-p5-10 · « Le produit le plus vendu » : trois gagnants ──────────────────────────────────────── */
+    {
+      id: "p5-28", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 2,
+      titre: "« Notre produit le plus vendu » — en unités",
+      question: "Le service achats demande quel est notre produit le plus vendu, pour en recommander en priorité. « Le plus vendu » se comprend d'au moins trois façons : celui dont on a écoulé le plus d'unités, celui qui a rapporté le plus d'argent, ou celui qui revient dans le plus de commandes — et les trois ne désignent pas le même produit. Interrogé, le service achats précise qu'il veut réapprovisionner un stock : ce sont donc les unités qui l'intéressent.",
+      consigne: "Trois colonnes, dans cet ordre : l'identifiant du produit, son nom et le nombre d'unités vendues, c'est-à-dire la somme des quantités sur les commandes qui ne sont pas annulee (une commande retournée compte comme vendue : la marchandise est bien partie de l'entrepôt). Un seul produit, celui qui arrive en tête.",
+      solution: "SELECT p.id, p.nom, SUM(l.quantite) AS unites FROM produits p JOIN lignes_commande l ON l.produit_id = p.id JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY p.id, p.nom ORDER BY unites DESC LIMIT 1",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "Deux jointures sont nécessaires : lignes_commande porte les quantités, mais c'est commandes qui porte le statut.",
+      clause: "SUM",
+      exemple: "SUM(quantite) additionne des unités ; SUM(quantite * prix_unitaire) additionne des euros. La même requête, avec l'une ou l'autre, ne répond pas à la même question.",
+      explication: "En unités, le produit le plus vendu est le 113, Bougies chauffe-plat, avec 21 unités — un article à 3,50 € qu'on achète par quatre. Loin derrière viennent la Souris sans fil (14) et le Cordon HDMI (12). En chiffre d'affaires, l'exercice suivant montre que c'est un tout autre produit qui l'emporte. Noter la définition retenue pour « vendu » : les commandes retournées comptent, parce que le service achats raisonne en flux de stock, et que la marchandise a bien quitté l'entrepôt. Un contrôleur de gestion aurait tranché l'inverse.",
+      retenir: "Avant d'écrire une requête sur une question métier, rendez-la décidable : « le plus vendu » n'a de réponse qu'une fois choisi entre les unités, les euros et le nombre de commandes. Ce choix se demande au demandeur, il ne se devine pas."
+    },
+    {
+      id: "p5-29", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 2,
+      titre: "« Notre produit le plus vendu » — en euros",
+      question: "Même question, autre service : le contrôle de gestion veut savoir quel produit a le plus rapporté, pour arbitrer un budget de mise en avant. La marchandise revenue ne lui rapporte rien, elle est donc exclue.",
+      consigne: "Trois colonnes, dans cet ordre : l'identifiant du produit, son nom et son chiffre d'affaires produits, c'est-à-dire la somme des quantités multipliées par le prix unitaire facturé, sur les commandes qui ne sont ni annulee ni retournee. Un seul produit, celui qui arrive en tête.",
+      solution: "SELECT p.id, p.nom, SUM(l.quantite * l.prix_unitaire) AS ca FROM produits p JOIN lignes_commande l ON l.produit_id = p.id JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY p.id, p.nom ORDER BY ca DESC LIMIT 1",
+      comparer: {},
+      pieges: ["P7", "P10"],
+      piste: "Par rapport à l'exercice précédent, deux choses changent : ce qu'on additionne, et la liste des statuts écartés.",
+      clause: "ORDER BY",
+      exemple: "Un article à 3,50 € vendu 21 fois rapporte 73,50 € ; un article à 1 299,00 € vendu 4 fois en rapporte plus de 5 000.",
+      explication: "C'est le 101, Ordinateur portable 15 pouces, avec 5 146,00 € — pour seulement quatre unités vendues. Les Bougies chauffe-plat, championnes en volume, ne pèsent que 73,50 €. Deux questions presque identiques, deux produits sans rapport, et aucune des deux réponses n'est fausse : elles mesurent le volume d'un côté, la valeur de l'autre. Mettre en avant les bougies ferait du trafic, mettre en avant l'ordinateur ferait du chiffre — et la requête ne peut pas choisir à la place du métier.",
+      retenir: "Changer ce qu'on additionne change la réponse, pas la requête : SUM(quantite) et SUM(quantite * prix_unitaire) ont la même forme et ne mesurent pas le même monde."
+    },
+    {
+      id: "p5-30", type: "qcm",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Comprendre", difficulte: 2,
+      titre: "La troisième lecture n'a pas de gagnant",
+      question: "Troisième façon de comprendre « le plus vendu » : le produit qui revient dans le plus grand nombre de commandes différentes. Sur cette base, le maximum est de 9 commandes, atteint par le Clavier sans fil (106) ET par la Souris sans fil (107). Que doit faire la requête ?",
+      options: [
+        "Renvoyer les deux produits : il y a une égalité, et un LIMIT 1 en cacherait un sans rien signaler",
+        "Renvoyer celui dont l'identifiant est le plus petit, 106, pour avoir une réponse unique",
+        "Renvoyer celui des deux qui a le plus gros chiffre d'affaires, pour départager",
+        "Renvoyer une erreur : la question n'admet pas de réponse"
+      ],
+      reponse: 0,
+      pieges: ["P5"],
+      piste: "Un LIMIT 1 ne dit jamais qu'il a coupé au milieu d'une égalité : il renvoie une ligne, et cette ligne a l'air d'être la seule.",
+      clause: "LIMIT",
+      exemple: "Entre deux produits à 9 commandes, trier par identifiant donne une réponse stable — et parfaitement arbitraire.",
+      explication: "Les deux produits sont à égalité stricte : aucune des deux réponses n'est « la bonne », et choisir le plus petit identifiant reviendrait à inventer un critère que personne n'a demandé. Départager par le chiffre d'affaires est défendable, mais c'est une AUTRE question, qu'il faut poser avant d'y répondre. La seule réponse honnête à la question telle qu'elle est posée est : deux produits, ex æquo. C'est le moment de le dire au demandeur, pas de trancher à sa place avec un LIMIT 1.",
+      retenir: "Un LIMIT 1 sur un classement suppose qu'il n'y a pas d'égalité en tête. Quand il y en a une, il la cache en silence — et c'est à la personne qui a posé la question de décider comment départager."
+    },
+    {
+      id: "p5-31", type: "corriger",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Le LIMIT 1 qui tranche tout seul",
+      question: "Cette requête cherche le produit présent dans le plus grand nombre de commandes. Elle en renvoie un. Ils sont deux, à égalité.",
+      consigne: "Trois colonnes, dans cet ordre : l'identifiant du produit, son nom et le nombre de commandes différentes où il apparaît, sur les commandes qui ne sont pas annulee. Renvoyez TOUS les produits qui atteignent le maximum, et eux seuls. Triés par identifiant croissant.",
+      depart: "SELECT p.id, p.nom, COUNT(DISTINCT l.commande_id) AS commandes FROM produits p JOIN lignes_commande l ON l.produit_id = p.id JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY p.id, p.nom ORDER BY commandes DESC LIMIT 1",
+      solution: "SELECT p.id, p.nom, COUNT(DISTINCT l.commande_id) AS commandes FROM produits p JOIN lignes_commande l ON l.produit_id = p.id JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY p.id, p.nom HAVING COUNT(DISTINCT l.commande_id) = (SELECT MAX(n) FROM (SELECT COUNT(DISTINCT l2.commande_id) AS n FROM lignes_commande l2 JOIN commandes o2 ON o2.id = l2.commande_id WHERE o2.statut <> 'annulee' GROUP BY l2.produit_id)) ORDER BY p.id",
+      comparer: { ordonne: true },
+      pieges: ["P5"],
+      piste: "Remplacer « garde la première ligne du classement » par « garde toutes les lignes qui atteignent le maximum ». Le maximum se calcule à part, dans une sous-requête.",
+      clause: "HAVING",
+      exemple: "Exécutez le départ sans son LIMIT 1 : les deux premières lignes portent le même nombre, et c'est exactement ce que le LIMIT cachait.",
+      explication: "Le Clavier sans fil (106) et la Souris sans fil (107) apparaissent chacun dans 9 commandes. Le LIMIT 1 en renvoie un seul, et rien n'indique que l'autre existe — c'est le même mécanisme que le classement du palier 4, appliqué ici à une question métier. La correction consiste à calculer d'abord le maximum, puis à garder tous les groupes qui l'atteignent : la requête répond alors à la question posée (« lequel revient le plus souvent ») plutôt qu'à une version appauvrie de celle-ci (« donne-m'en un »).",
+      retenir: "« Le meilleur » est au singulier dans la langue, pas dans les données. Une requête de tête se écrit avec le maximum calculé à part, sauf quand on sait qu'aucune égalité n'est possible."
+    },
+
+    /* ── ch-p5-11 · « Un client actif » : la définition cache une date ─────────────────────────────────── */
+    {
+      id: "p5-32", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 1,
+      titre: "« Combien de clients actifs ? » — première définition",
+      question: "Le directeur demande combien de clients sont actifs. « Actif » n'est écrit nulle part dans la base : c'est une notion de métier, qui cache toujours une date de référence et souvent une condition sur ce qui compte comme activité. Après discussion, la définition retenue est la plus large : un client est actif s'il a passé au moins une commande depuis le 1ᵉʳ janvier 2026.",
+      consigne: "Une seule colonne : le nombre de clients différents ayant passé au moins une commande dont la date est le 1ᵉʳ janvier 2026 ou plus tard, quel que soit le statut de cette commande.",
+      solution: "SELECT COUNT(DISTINCT client_id) FROM commandes WHERE date_commande >= '2026-01-01'",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "Un client qui a passé trois commandes cette année reste un client : c'est le nombre de clients DIFFÉRENTS qui est demandé, pas le nombre de commandes.",
+      clause: "DISTINCT",
+      exemple: "La date de référence du cours est le 30 juin 2026 : « depuis le 1ᵉʳ janvier 2026 » couvre donc six mois d'activité.",
+      explication: "26 clients sur 40 ont passé au moins une commande depuis le 1ᵉʳ janvier 2026, soit près des deux tiers. Trois décisions se cachent dans ce seul chiffre : la date à partir de laquelle on compte (ici le 1ᵉʳ janvier, mais « les six derniers mois » à partir du 30 juin donnerait une autre borne), le fait de compter les clients et non les commandes, et le choix de ne filtrer AUCUN statut — une commande annulée compte donc comme une preuve d'activité. Les deux exercices suivants montrent ce que ce dernier point change.",
+      retenir: "Une notion de métier comme « actif » n'existe pas dans la base : elle se traduit toujours par une date de référence, une population et une condition. Écrivez les trois avant d'écrire la requête."
+    },
+    {
+      id: "p5-33", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 2,
+      titre: "« Combien de clients actifs ? » — deuxième définition",
+      question: "Le directeur financier n'est pas d'accord avec le premier chiffre : pour lui, un client qui a annulé sa commande n'a pas montré qu'il était actif, il a montré le contraire. Reprenez le même calcul en écartant les commandes annulées.",
+      consigne: "Une seule colonne : le nombre de clients différents ayant passé au moins une commande dont la date est le 1ᵉʳ janvier 2026 ou plus tard et dont le statut n'est pas annulee.",
+      solution: "SELECT COUNT(DISTINCT client_id) FROM commandes WHERE date_commande >= '2026-01-01' AND statut <> 'annulee'",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "Une seule condition s'ajoute à la requête précédente. Elle ne change rien à la forme, et beaucoup au résultat.",
+      clause: "WHERE",
+      exemple: "Un client dont la seule commande de 2026 a été annulée disparaît du compte ; un client qui en a deux, dont une annulée, y reste.",
+      explication: "22 clients, contre 26 avec la définition large : quatre clients n'avaient à leur actif qu'une commande annulée. L'écart est de 15 %, et les deux chiffres sont justes. Une troisième définition, encore plus stricte — n'accepter que les commandes effectivement livrées — tomberait à 12, soit moins de la moitié du premier chiffre. Trois nombres, de 26 à 12, pour une seule et même question posée en français : c'est l'écart que produit une définition laissée implicite.",
+      retenir: "Entre la définition la plus large et la plus stricte de « client actif », ce jeu de données passe de 26 à 12. Un indicateur de pilotage sans sa définition écrite n'est pas un indicateur, c'est une opinion."
+    },
+    {
+      id: "p5-34", type: "corriger",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "La définition qui a changé en route",
+      question: "Le tableau de bord doit afficher les clients actifs selon la définition retenue par le directeur financier : une commande depuis le 1ᵉʳ janvier 2026, hors commandes annulées. Cette requête affiche un chiffre presque deux fois plus petit, parce qu'elle applique une autre définition que celle qui a été décidée.",
+      consigne: "Une seule colonne : le nombre de clients différents ayant passé au moins une commande dont la date est le 1ᵉʳ janvier 2026 ou plus tard et dont le statut n'est pas annulee.",
+      depart: "SELECT COUNT(DISTINCT client_id) FROM commandes WHERE date_commande >= '2026-01-01' AND statut = 'livree'",
+      solution: "SELECT COUNT(DISTINCT client_id) FROM commandes WHERE date_commande >= '2026-01-01' AND statut <> 'annulee'",
+      comparer: {},
+      pieges: ["P7"],
+      piste: "La consigne dit ce qu'il faut EXCLURE ; la requête, elle, décide ce qu'elle INCLUT. Les deux ne désignent pas la même population.",
+      clause: "WHERE",
+      exemple: "Entre « tout sauf annulee » et « seulement livree », trois statuts changent de camp : expediee, retournee et en_preparation.",
+      explication: "Le départ ne compte que les clients dont une commande est déjà LIVRÉE : 12 clients, contre 22 pour la définition retenue. Les dix autres ont une commande expédiée, en préparation ou retournée — tout sauf inactifs. La requête n'est pas fausse en elle-même : elle répond à une question parfaitement légitime (« combien de clients ont déjà reçu une commande cette année ») qui n'est simplement pas celle qu'on avait décidée. C'est l'erreur la plus fréquente d'un tableau de bord : une définition qui dérive entre la réunion où elle a été arrêtée et la requête qui l'implémente.",
+      retenir: "Le filtre d'un indicateur doit être relu contre la phrase qui le définit, mot à mot. « Pas annulée » et « livrée » semblent proches et désignent deux populations qui n'ont presque rien à voir."
+    },
+
+    /* ── ch-p5-12 · Le prix d'hier et celui d'aujourd'hui ─────────────────────────────────────────────── */
+    {
+      id: "p5-35", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Au prix facturé, ou au prix d'aujourd'hui",
+      question: "Deux colonnes de cette base contiennent un prix : lignes_commande.prix_unitaire, le prix auquel l'article a été FACTURÉ au moment de la vente, et produits.prix, son prix ACTUEL. Les tarifs ayant changé en octobre 2025, les deux ne donnent pas le même total. Calculez les deux, côte à côte.",
+      consigne: "Deux colonnes, dans cet ordre : la somme des quantités multipliées par le prix unitaire facturé, puis la somme des mêmes quantités multipliées par le prix actuel du produit. Sur les commandes qui ne sont ni annulee ni retournee.",
+      solution: "SELECT SUM(l.quantite * l.prix_unitaire) AS facture, SUM(l.quantite * p.prix) AS actuel FROM lignes_commande l JOIN produits p ON p.id = l.produit_id JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee', 'retournee')",
+      comparer: {},
+      pieges: ["P10", "P7"],
+      piste: "Les deux sommes se calculent dans la même requête : il suffit de joindre la table des produits pour disposer des deux prix sur chaque ligne.",
+      clause: "JOIN",
+      exemple: "La commande 1001 porte un ordinateur portable facturé 1 249,00 € ; le même produit est aujourd'hui à 1 299,00 €.",
+      explication: "12 387,00 € au prix facturé, 12 445,00 € au prix actuel : 58,00 € d'écart seulement, soit moins de 0,5 %. C'est précisément ce qui rend l'erreur dangereuse — l'écart est trop petit pour alerter qui que ce soit, et pourtant le second chiffre ne veut rien dire. Il répond à la question « combien ces ventes rapporteraient-elles si elles avaient lieu aujourd'hui », qui est une simulation, pas un chiffre d'affaires. Vingt-deux lignes de commande portent un prix différent du prix actuel, toutes antérieures au 1ᵉʳ octobre 2025.",
+      retenir: "Un chiffre d'affaires se calcule TOUJOURS au prix facturé. Le prix actuel sert à simuler, jamais à mesurer le passé — et comme l'écart est faible, rien ne vous préviendra de la confusion."
+    },
+    {
+      id: "p5-36", type: "corriger",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Détection d'erreur", difficulte: 2,
+      titre: "Le chiffre d'affaires d'un passé réécrit",
+      question: "Cette requête est censée donner le chiffre d'affaires produits de la boutique. Elle renvoie 12 445,00 € au lieu de 12 387,00 € : elle a recalculé le passé avec les tarifs d'aujourd'hui.",
+      consigne: "Une seule colonne : le chiffre d'affaires produits, c'est-à-dire la somme des quantités multipliées par le prix unitaire FACTURÉ, sur les commandes qui ne sont ni annulee ni retournee.",
+      depart: "SELECT SUM(l.quantite * p.prix) FROM lignes_commande l JOIN produits p ON p.id = l.produit_id JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee', 'retournee')",
+      solution: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee', 'retournee')",
+      comparer: {},
+      pieges: ["P10"],
+      piste: "Les deux colonnes de prix sont dans la requête. Une seule dit ce qui a été encaissé.",
+      clause: "AS",
+      exemple: "produits.prix est le prix du catalogue d'aujourd'hui ; lignes_commande.prix_unitaire est celui qui figurait sur la facture.",
+      explication: "Le départ multiplie chaque quantité vendue par le prix d'AUJOURD'HUI, et obtient 58,00 € de trop. Une fois la bonne colonne utilisée, la jointure sur produits devient d'ailleurs inutile : c'est souvent le signe qu'une table a été jointe parce qu'on pensait en avoir besoin, et non parce que la question le demandait. Un chiffre d'affaires au prix actuel a une propriété redoutable : il CHANGE chaque fois qu'on modifie un tarif, même pour des ventes vieilles de deux ans. Un indicateur du passé qui bouge tout seul est toujours le symptôme de cette confusion.",
+      retenir: "Si un chiffre du passé change alors que le passé, lui, n'a pas changé, c'est qu'une colonne du présent s'est glissée dans le calcul."
+    },
+
+    /* ── ch-p5-13 · « Le panier moyen » et le choix du dénominateur ────────────────────────────────────── */
+    {
+      id: "p5-37", type: "requete",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le panier moyen, et sur combien de commandes",
+      question: "On demande le panier moyen de la boutique. Une moyenne est un quotient : elle cache donc deux décisions, ce qu'on additionne et ce par quoi on divise. Le périmètre retenu est celui du chiffre d'affaires produits : ni les commandes annulées, ni les retournées. Donnez le panier moyen ET le nombre de commandes sur lequel il porte.",
+      consigne: "Deux colonnes, dans cet ordre : le nombre de commandes retenues, puis la moyenne de leur montant de produits (quantité × prix unitaire facturé, additionné par commande), arrondie à 2 décimales. Seules les commandes qui ne sont ni annulee ni retournee sont retenues.",
+      solution: "SELECT COUNT(*) AS commandes, ROUND(AVG(total), 2) AS panier_moyen FROM (SELECT o.id, SUM(l.quantite * l.prix_unitaire) AS total FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY o.id)",
+      comparer: {},
+      pieges: ["P4", "P7"],
+      piste: "Il faut d'abord le total de CHAQUE commande, puis la moyenne de ces totaux : deux agrégations successives, donc une sous-requête — on ne peut pas faire la moyenne de sommes en une seule passe.",
+      clause: "AVG",
+      exemple: "Faire la moyenne directement sur les lignes de commande donnerait le montant moyen d'une LIGNE, pas d'une commande : 142 lignes pour 70 commandes.",
+      explication: "229,39 € sur 54 commandes. Afficher le dénominateur à côté du résultat n'est pas une coquetterie : c'est lui qui rend la moyenne vérifiable et comparable d'un mois à l'autre. Le total par commande doit être calculé avant la moyenne — faire AVG directement sur lignes_commande répondrait à « combien vaut une ligne de commande en moyenne », une question que personne n'a posée. Deux autres périmètres donnent 231,91 € (toutes commandes, 70 d'entre elles) et 233,69 € (frais de port inclus) : trois nombres proches, qui ne se comparent pas entre eux.",
+      retenir: "Une moyenne se publie toujours avec son dénominateur. Et une moyenne de sommes se calcule en deux temps : on agrège d'abord par l'objet dont on parle, on moyenne ensuite."
+    },
+    {
+      id: "p5-38", type: "corriger",
+      niveau: "P5", competence: "vocabulaire-metier", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Moyenne sur soixante-dix commandes",
+      question: "Ce panier moyen est calculé sur toutes les commandes de la base, annulées comprises. La consigne demandait le même périmètre que le chiffre d'affaires produits.",
+      consigne: "Deux colonnes, dans cet ordre : le nombre de commandes retenues, puis la moyenne de leur montant de produits (quantité × prix unitaire facturé, additionné par commande), arrondie à 2 décimales. Seules les commandes qui ne sont ni annulee ni retournee sont retenues.",
+      depart: "SELECT COUNT(*) AS commandes, ROUND(AVG(total), 2) AS panier_moyen FROM (SELECT o.id, SUM(l.quantite * l.prix_unitaire) AS total FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id GROUP BY o.id)",
+      solution: "SELECT COUNT(*) AS commandes, ROUND(AVG(total), 2) AS panier_moyen FROM (SELECT o.id, SUM(l.quantite * l.prix_unitaire) AS total FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY o.id)",
+      comparer: {},
+      pieges: ["P7", "P4"],
+      piste: "Le calcul est juste, la moyenne est juste. C'est la population sur laquelle elle porte qui n'est pas celle qu'on avait décidée — et la première colonne le dit tout haut.",
+      clause: "AVG",
+      exemple: "70 commandes au dénominateur au lieu de 54 : 16 commandes annulées ou retournées se sont invitées dans la moyenne.",
+      explication: "Le départ donne 231,91 € sur 70 commandes, contre 229,39 € sur 54 : l'écart sur la moyenne est de 2,52 €, soit à peine 1 %, mais le dénominateur, lui, est faux d'un quart. C'est tout l'intérêt d'afficher le nombre de commandes à côté de la moyenne : l'erreur de périmètre serait restée invisible sur le seul montant, alors qu'elle saute aux yeux sur le compte. Les 16 commandes de trop sont les 11 annulées et les 5 retournées — exactement celles que le chiffre d'affaires produits écarte.",
+      retenir: "Quand deux moyennes se ressemblent, comparez leurs dénominateurs : c'est là que se voit une erreur de périmètre qu'un montant moyen, lui, peut parfaitement masquer."
     }
   ]
 };
+
+/* Les deux jeux de données (D027, D068) et leur documentation, celle que l'explorateur de schéma affiche en regard
+   des colonnes. `boutique` est exactement `CONTENU.base` (le seed principal, gelé) : elle n'est pas recopiée.
+   `export` décrit le jeu sale du palier 5 (src/seed-sale.sql, documenté dans SCHEMA-EXPORT.md). Les remarques de
+   colonnes y disent ce qu'on y trouve, jamais comment le nettoyer : c'est le travail des exercices. */
+CONTENU.jeux = {
+  boutique: CONTENU.base,
+  export: {
+    nom: "Export brut",
+    resume: "Quatre fichiers sortis d'un ancien système, jamais nettoyés : aucune clé, aucune contrainte, tout en texte.",
+    tables: {
+      export_clients: {
+        role: "Les clients tels que l'export les a écrits : un seul champ pour le nom et le prénom, des villes saisies à la main.",
+        colonnes: {
+          id: "du texte, pas un nombre ; il n'est pas unique et l'un d'eux porte un espace",
+          nom_complet: "prénom et nom mélangés, dans une casse libre",
+          email: "parfois répété d'une ligne à l'autre, à la casse près",
+          ville: "saisie à la main : casse, espaces, et plusieurs façons de ne rien dire",
+          date_inscription: "plusieurs formats, et des valeurs qui ne sont pas des dates",
+          points_fidelite: "des nombres stockés en texte"
+        }
+      },
+      export_commandes_2025: {
+        role: "Les commandes de 2025. L'export a été découpé par période : ce fichier et celui de 2026 se recouvrent.",
+        colonnes: {
+          client_id: "censé désigner un client de export_clients ; rien ne le garantit",
+          montant: "du texte, avec des séparateurs variables",
+          statut: "écrit dans une casse libre, et pas toujours dans la liste attendue",
+          date_livraison: "vide de plusieurs façons différentes"
+        }
+      },
+      export_commandes_2026: {
+        role: "Les commandes de 2026, mêmes colonnes que le fichier de 2025 — avec quelques lignes communes aux deux.",
+        colonnes: {
+          client_id: "censé désigner un client de export_clients ; rien ne le garantit",
+          montant: "du texte, avec des séparateurs variables",
+          statut: "écrit dans une casse libre, et pas toujours dans la liste attendue",
+          date_livraison: "vide de plusieurs façons différentes"
+        }
+      },
+      export_livraisons: {
+        role: "Le fichier du transporteur, produit par un autre système encore : ses identifiants de commande ne retombent pas tous sur une commande.",
+        colonnes: {
+          commande_id: "censé désigner une commande ; rien ne le garantit",
+          transporteur: "le même transporteur écrit de plusieurs façons",
+          date_reception: "parfois antérieure à l'expédition",
+          poids_kg: "du texte, avec des séparateurs variables"
+        }
+      }
+    }
+  }
+};
+
 /* Chapitres (Parcours, D050) : une leçon courte suivie des exercices qui l'appliquent, repris de CHAPITRES de Classe'R
    (Reference/classer-v2.html). Les exercices ne sont pas dupliqués : `exercices` cite leurs identifiants.
-     { id, niveau (un id de PALIERS), titre, duree, resume,
-       lecon: { intro, points: [...], exemple: { titre, code, resultat, commentaire }, astuce },
+     { id, niveau (un id de PALIERS), titre, duree, resume, jeu ("export" pour le jeu sale du palier 5, D068),
+       lecon: { intro, points: [...], exemple: { titre, code, lignes, resultat, commentaire }, astuce },
        exercices: [ids de CONTENU.exercices] }
+   `exemple.lignes` (D068) : le nombre de lignes de CHAQUE jeu de résultats que renvoie `code`, dans l'ordre —
+   [4] pour un exemple ordinaire, [34, 70] pour un exemple à deux requêtes, [0] quand zéro ligne EST la leçon
+   (ch-p4-3). L'Autotest le compare à ce qui sort vraiment : il contrôle ainsi ce qu'un exemple renvoie, et plus
+   seulement qu'il s'exécute. Les VALEURS annoncées par `resultat` restent, elles, une relecture humaine.
    Chapitre 0 et palier 1 : lot 6. Le reste arrive un palier par lot (D002). */
 const CHAPITRES = [
   {
@@ -2570,6 +3258,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "À quoi ressemble une table", code: "SELECT nom FROM categories;",
+        lignes: [7],
         resultat: "Informatique, Maison, Cuisine, Sport, Livres, Jouets, Jardin — sept lignes, une colonne.",
         commentaire: "La table categories n'a besoin de rien de plus pour exister. Vous écrirez vous-même une requête comme celle-ci très bientôt : ceci n'est qu'un aperçu, inutile de la retenir."
       },
@@ -2590,6 +3279,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "La requête la plus simple", code: "SELECT nom FROM categories;",
+        lignes: [7],
         resultat: "Informatique, Maison, Cuisine, Sport, Livres, Jouets, Jardin.",
         commentaire: "Une colonne, sept lignes : toutes les catégories de la boutique, dans l'ordre où elles sont rangées dans la table."
       },
@@ -2609,6 +3299,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Filtrer sur un nombre", code: "SELECT nom, prix FROM produits WHERE prix > 100;",
+        lignes: [6],
         resultat: "6 lignes : les produits à plus de 100 €.",
         commentaire: "WHERE prix > 100 ne garde que les lignes où la colonne prix dépasse 100 ; les 24 autres produits disparaissent du résultat."
       },
@@ -2628,6 +3319,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Plusieurs villes à la fois", code: "SELECT prenom, ville FROM clients WHERE ville IN ('Nice', 'Montpellier');",
+        lignes: [3],
         resultat: "3 lignes : deux clients de Nice, un de Montpellier.",
         commentaire: "IN (...) remplace ville = 'Nice' OR ville = 'Montpellier' : plus court, et plus facile à relire avec davantage de valeurs."
       },
@@ -2647,6 +3339,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Trouver ce qui manque", code: "SELECT prenom FROM clients WHERE ville IS NULL;",
+        lignes: [4],
         resultat: "4 lignes : les clients dont la ville n'est pas renseignée.",
         commentaire: "ville IS NULL repère les lignes sans valeur ; ville = NULL, lui, ne renverrait jamais rien, même sur ces 4 lignes."
       },
@@ -2666,6 +3359,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Du moins cher au plus cher", code: "SELECT nom, prix FROM produits WHERE categorie_id = 6 ORDER BY prix;",
+        lignes: [2],
         resultat: "Puzzle 1000 pièces (14,50), puis Jeu de société (29,00).",
         commentaire: "Deux jouets, triés du moins cher au plus cher. ORDER BY prix DESC inverserait l'ordre."
       },
@@ -2685,6 +3379,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Le produit le plus cher", code: "SELECT nom, prix FROM produits ORDER BY prix DESC LIMIT 1;",
+        lignes: [1],
         resultat: "Un seul produit — mais deux produits partagent le prix le plus élevé (1 299 €) !",
         commentaire: "ORDER BY prix DESC LIMIT 1 renvoie l'un des deux : rien dans le tri ne garantit lequel."
       },
@@ -2704,6 +3399,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Les villes représentées", code: "SELECT DISTINCT ville FROM clients;",
+        lignes: [12],
         resultat: "Une ligne par ville différente, NULL comprise une seule fois.",
         commentaire: "40 clients, mais bien moins de villes différentes : DISTINCT retire les répétitions."
       },
@@ -2723,6 +3419,7 @@ const CHAPITRES = [
       ],
       exemple: {
         titre: "Une colonne calculée", code: "SELECT produit_id, quantite, prix_unitaire, quantite * prix_unitaire AS total_ligne FROM lignes_commande WHERE commande_id = 1038;",
+        lignes: [4],
         resultat: "4 lignes ; total_ligne vaut 34, 29, 25 puis 14.",
         commentaire: "total_ligne n'existe dans aucune table : c'est le résultat d'un calcul, affiché comme une colonne ordinaire grâce à AS. Le total de cette commande (102 €, avant frais de port) est la somme de ces quatre lignes."
       },
@@ -2744,6 +3441,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Résumer toute la table en une seule ligne",
         code: "SELECT COUNT(*) FROM commandes;",
+        lignes: [1],
         resultat: "1 ligne, 1 colonne : 70.",
         commentaire: "COUNT(*) a reçu les 70 lignes de la table commandes et n'en a renvoyé qu'une : leur nombre. Aucune colonne, aucun WHERE n'a changé cette logique — ce que fait COUNT(*) ici, c'est déjà agréger, même sans GROUP BY. Les prochains chapitres montrent comment obtenir ce chiffre par ville, par statut ou par mois plutôt que pour toute la boutique à la fois."
       },
@@ -2765,6 +3463,7 @@ const CHAPITRES = [
       exemple: {
         titre: "COUNT(*) contre COUNT(colonne)",
         code: "SELECT COUNT(*), COUNT(ville) FROM clients;",
+        lignes: [1],
         resultat: "40 et 36 : deux nombres différents, sur la même table.",
         commentaire: "COUNT(*) compte les 40 clients, tous confondus. COUNT(ville) n'en compte que 36 : les 4 clients sans ville connue ne participent pas au second nombre."
       },
@@ -2785,6 +3484,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Le total d'une commande",
         code: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande WHERE commande_id = 1038;",
+        lignes: [1],
         resultat: "102 : la somme des 4 lignes de cette commande, avant frais de port.",
         commentaire: "Sans le WHERE, cette même requête additionnerait les lignes de TOUTES les commandes de la boutique, pas seulement celle-ci — un résultat toujours valide, mais qui ne répond plus à la question posée."
       },
@@ -2805,6 +3505,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Deux divisions, deux résultats",
         code: "SELECT AVG(note), SUM(note) * 1.0 / COUNT(*) FROM commandes;",
+        lignes: [1],
         resultat: "3,75 et environ 1,71 : deux nombres très différents, sur la même colonne.",
         commentaire: "AVG(note) divise 120 (la somme des notes présentes) par 32 (le nombre de notes présentes) : 3,75. SUM(note) / COUNT(*) divise les mêmes 120 par 70 (le nombre TOTAL de commandes, notées ou pas) : un résultat bien plus bas, qui ne représente plus la satisfaction moyenne de personne en particulier."
       },
@@ -2825,6 +3526,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Les deux bornes du catalogue",
         code: "SELECT MIN(prix), MAX(prix) FROM produits;",
+        lignes: [1],
         resultat: "3,50 et 1 299,00 : les deux prix extrêmes du catalogue, dans la même ligne de résultat.",
         commentaire: "MIN et MAX peuvent figurer côte à côte dans le même SELECT, chacune dans sa colonne : rien n'empêche de demander plusieurs résumés à la fois."
       },
@@ -2846,6 +3548,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Une ligne par statut",
         code: "SELECT statut, COUNT(*) FROM commandes GROUP BY statut;",
+        lignes: [5],
         resultat: "5 lignes, une par statut : annulee, en_preparation, expediee, livree, retournee, chacune avec son propre compte.",
         commentaire: "Sans GROUP BY statut, cette même requête (SELECT statut, COUNT(*) FROM commandes) serait acceptée par SQLite, mais renverrait une seule ligne trompeuse : un statut choisi arbitrairement, et un compte qui porte en réalité sur toute la table."
       },
@@ -2867,6 +3570,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Les commandes qui dépassent 1 000 €",
         code: "SELECT commande_id, SUM(quantite * prix_unitaire) AS total FROM lignes_commande GROUP BY commande_id HAVING total > 1000;",
+        lignes: [6],
         resultat: "6 commandes sur 70, chacune avec un total par commande supérieur à 1 000 €.",
         commentaire: "HAVING total > 1000 ne regarde le total de chaque commande qu'UNE FOIS qu'il a été calculé par GROUP BY et SUM. Écrire ce même seuil dans un WHERE comparerait chaque LIGNE isolément, avant toute addition — un résultat différent, et plus petit."
       },
@@ -2888,6 +3592,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Deux familles de statuts",
         code: "SELECT CASE WHEN statut IN ('annulee', 'retournee') THEN 'perdue' ELSE 'aboutie' END AS famille, COUNT(*) FROM commandes GROUP BY famille;",
+        lignes: [2],
         resultat: "2 lignes : perdue (16 commandes) et aboutie (54 commandes).",
         commentaire: "CASE WHEN a transformé les 5 statuts d'origine en seulement 2 familles, choisies par l'auteur de la requête — pas par la structure de la table."
       },
@@ -2909,6 +3614,7 @@ const CHAPITRES = [
       exemple: {
         titre: "L'année de chaque commande",
         code: "SELECT strftime('%Y', date_commande) AS annee, COUNT(*) FROM commandes GROUP BY annee;",
+        lignes: [2],
         resultat: "2025 (44 commandes) et 2026 (26 commandes).",
         commentaire: "strftime('%Y', date_commande) réduit chaque date à son année, sous forme de texte ('2025', pas 2025) ; GROUP BY regroupe ensuite sur cette valeur réduite, exactement comme sur une colonne ordinaire."
       },
@@ -2930,6 +3636,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Dix-huit mois possibles, dix-sept présents",
         code: "SELECT COUNT(DISTINCT strftime('%Y-%m', date_commande)) FROM commandes;",
+        lignes: [1],
         resultat: "17, alors que janvier 2025 à juin 2026 compte 18 mois civils.",
         commentaire: "Le compte distinct des mois présents dans les données (17) est inférieur au nombre de mois qui existent dans le calendrier sur cette période (18) : la différence, c'est le mois sans aucune commande, invisible pour GROUP BY."
       },
@@ -2951,6 +3658,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Produits, puis total",
         code: "SELECT SUM(quantite * prix_unitaire) FROM lignes_commande WHERE commande_id = 1038;",
+        lignes: [1],
         resultat: "102,00 € : le chiffre d'affaires PRODUITS de cette seule commande.",
         commentaire: "Cette commande a aussi 6,50 € de frais de port (visibles dans l'explorateur, table commandes, colonne frais_port) : son chiffre d'affaires TOTAL est donc 108,50 €, pas 102,00 €."
       },
@@ -2972,6 +3680,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Le fil entre deux tables",
         code: "SELECT client_id, date_commande FROM commandes LIMIT 3;",
+        lignes: [3],
         resultat: "Trois lignes, dont des identifiants (201, 202…) à la place des noms.",
         commentaire: "Ces nombres ne sont pas des noms, mais ils y mènent : 201 désigne la ligne de clients dont l'id vaut 201. Ouvrez l'explorateur sur les deux tables pour suivre le fil à la main — c'est exactement ce travail qu'une jointure va faire pour vous, sur les 70 commandes à la fois."
       },
@@ -2993,6 +3702,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Deux tables, un seul résultat",
         code: "SELECT c.nom, o.date_commande FROM commandes o JOIN clients c ON c.id = o.client_id;",
+        lignes: [70],
         resultat: "70 lignes : le nom du client en clair, à côté de la date de sa commande.",
         commentaire: "Le nom vient de clients, la date de commandes, et le ON garantit que les deux appartiennent bien à la même commande. Sans ce ON, le même SELECT renverrait 2 800 lignes — chaque commande au nom de chacun des 40 clients."
       },
@@ -3014,6 +3724,7 @@ const CHAPITRES = [
       exemple: {
         titre: "De 70 à 142",
         code: "SELECT o.id, l.produit_id, l.quantite FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id;",
+        lignes: [142],
         resultat: "142 lignes, alors que la table commandes n'en compte que 70.",
         commentaire: "Les 70 commandes sont toutes présentes, mais celles qui ont plusieurs produits occupent plusieurs lignes : la commande 1038, qui en a 4, apparaît 4 fois. Le nombre de lignes du résultat est celui de lignes_commande, pas celui de commandes."
       },
@@ -3035,6 +3746,7 @@ const CHAPITRES = [
       exemple: {
         titre: "306,50 € ou 636,00 € ?",
         code: "SELECT SUM(frais_port) FROM commandes;",
+        lignes: [1],
         resultat: "306,50 € — le vrai total, chaque commande comptée une fois.",
         commentaire: "La même somme calculée après une jointure avec lignes_commande renvoie 636,00 €, soit plus du double : les frais de la commande 1038, 6,50 €, y sont comptés 4 fois parce qu'elle a 4 lignes de produits. Les deux requêtes s'exécutent sans la moindre erreur ; seule la question « sur quoi est-ce que j'additionne ? » les sépare."
       },
@@ -3056,6 +3768,7 @@ const CHAPITRES = [
       exemple: {
         titre: "70 commandes, 76 lignes",
         code: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id;",
+        lignes: [76],
         resultat: "76 lignes : les 70 commandes, plus 6 clients à l'identifiant vide.",
         commentaire: "Les 6 lignes supplémentaires sont les clients qui n'ont jamais commandé : ils apparaissent avec leur nom, et un identifiant de commande à NULL. Avec JOIN au lieu de LEFT JOIN, ces 6 lignes disparaîtraient — sans message, sans trace."
       },
@@ -3077,6 +3790,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Chercher une absence",
         code: "SELECT c.nom FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE o.id IS NULL;",
+        lignes: [6],
         resultat: "6 lignes : les clients qui n'ont jamais rien commandé.",
         commentaire: "La même forme répond à « quels produits n'ont jamais été commandés ? » (5 produits) ou « quelle catégorie ne contient aucun produit ? » (Jardin). Seules changent les deux tables et la colonne du ON : c'est une forme à reconnaître, pas trois requêtes à apprendre."
       },
@@ -3098,6 +3812,7 @@ const CHAPITRES = [
       exemple: {
         titre: "1 ou 0, pour le même client",
         code: "SELECT COUNT(*), COUNT(o.id) FROM clients c LEFT JOIN commandes o ON o.client_id = c.id WHERE c.id = 215;",
+        lignes: [1],
         resultat: "1 et 0 : deux nombres différents, pour un client qui n'a aucune commande.",
         commentaire: "COUNT(*) voit une ligne et la compte. COUNT(o.id) regarde l'identifiant de commande sur cette ligne, le trouve vide, et ne compte rien. Seul le second répond à « combien de commandes a ce client »."
       },
@@ -3119,6 +3834,7 @@ const CHAPITRES = [
       exemple: {
         titre: "46 ou 59 lignes, pour une seule différence",
         code: "SELECT c.nom, o.id FROM clients c LEFT JOIN commandes o ON o.client_id = c.id AND o.statut = 'livree';",
+        lignes: [59],
         resultat: "59 lignes : 46 commandes livrées, plus 13 clients sans aucune commande livrée.",
         commentaire: "La même condition déplacée dans un WHERE ne renvoie que 46 lignes : les 13 clients sans commande livrée ont été éliminés, parce que leur statut valait NULL. Le LEFT JOIN était pourtant bien écrit — c'est le WHERE qui l'a défait."
       },
@@ -3140,6 +3856,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Cinq produits sur trente",
         code: "SELECT p.nom FROM produits p LEFT JOIN lignes_commande l ON l.produit_id = p.id WHERE l.produit_id IS NULL;",
+        lignes: [5],
         resultat: "5 lignes : Tapis de bain, Robot pâtissier, Vélo d'appartement, Atlas du monde, Puzzle 1000 pièces.",
         commentaire: "Aucune colonne de la table produits ne dit « jamais vendu » : l'information n'existe nulle part, elle se déduit du vide laissé par la jointure. C'est ce qui rend cette forme irremplaçable."
       },
@@ -3161,6 +3878,7 @@ const CHAPITRES = [
       exemple: {
         titre: "De la commande au produit, en passant par le client",
         code: "SELECT c.nom AS client, p.nom AS produit FROM commandes o JOIN clients c ON c.id = o.client_id JOIN lignes_commande l ON l.commande_id = o.id JOIN produits p ON p.id = l.produit_id WHERE o.id = 1038;",
+        lignes: [4],
         resultat: "4 lignes : le nom du client, répété, à côté de chacun des 4 produits de sa commande.",
         commentaire: "Trois jointures, trois ON, chacun avec sa propre colonne. Le client apparaît quatre fois : c'est le passage par lignes_commande, du côté « plusieurs », qui a multiplié les lignes — pas le nombre de tables."
       },
@@ -3182,6 +3900,7 @@ const CHAPITRES = [
       exemple: {
         titre: "479,00 € hier, 449,00 € aujourd'hui",
         code: "SELECT l.prix_unitaire, p.prix, p.nom FROM lignes_commande l JOIN produits p ON p.id = l.produit_id WHERE l.commande_id = 1004;",
+        lignes: [2],
         resultat: "Une tablette facturée 479,00 € alors que le catalogue affiche 449,00 €.",
         commentaire: "Le montant de cette commande vaut 498,50 € avec les prix facturés, 468,50 € avec ceux d'aujourd'hui. Les deux requêtes s'exécutent sans erreur ; une seule dit la vérité sur ce que le client a payé."
       },
@@ -3203,6 +3922,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Quatre réponses pour une seule question",
         code: "SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee');",
+        lignes: [1],
         resultat: "12 387,00 € : le chiffre d'affaires produits de la boutique.",
         commentaire: "Livrées seules, le total tombe à 11 490,00 € ; hors annulées, il monte à 12 724,50 € ; tous statuts confondus, à 16 233,50 €. Aucune de ces réponses n'est fausse : elles répondent à des questions différentes, que le mot seul ne distingue pas."
       },
@@ -3224,6 +3944,7 @@ const CHAPITRES = [
       exemple: {
         titre: "232,00 €, sans aucune jointure",
         code: "SELECT SUM(frais_port) FROM commandes WHERE statut NOT IN ('annulee','retournee');",
+        lignes: [1],
         resultat: "232,00 € : les frais de port des commandes retenues, chacune comptée une fois.",
         commentaire: "Aucune jointure ici, et c'est précisément ce qui rend le calcul juste : frais_port et statut sont tous deux dans commandes. Ajouté aux 12 387,00 € de produits, ce total donne le chiffre d'affaires TOTAL, 12 619,00 €."
       },
@@ -3245,6 +3966,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Deux lectures de la même table",
         code: "SELECT c.nom AS filleul, p.nom AS parrain FROM clients c JOIN clients p ON p.id = c.parrain_id;",
+        lignes: [9],
         resultat: "9 lignes : chaque client parrainé, en face du nom de son parrain.",
         commentaire: "c et p désignent la même table, lue dans deux rôles distincts. Avec LEFT JOIN, le résultat compterait 40 lignes, les 31 clients sans parrain apparaissant avec un parrain vide."
       },
@@ -3267,6 +3989,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Une valeur calculée, utilisée tout de suite",
         code: "SELECT COUNT(*) FROM produits WHERE prix > (SELECT AVG(prix) FROM produits);",
+        lignes: [1],
         resultat: "6 — le nombre de produits dont le prix dépasse la moyenne de tous les produits, 165,31 €.",
         commentaire: "(SELECT AVG(prix) FROM produits) s'exécute d'abord et renvoie un seul nombre : 165,31. La requête principale compare ensuite chaque prix à CE nombre, exactement comme si WHERE prix > 165.31 avait été écrit directement."
       },
@@ -3288,6 +4011,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Une liste de produits, une liste de clients",
         code: "SELECT c.id, c.prenom, c.nom FROM clients c WHERE c.id IN (SELECT o.client_id FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE l.produit_id IN (SELECT id FROM produits WHERE categorie_id = 6));",
+        lignes: [4],
         resultat: "4 lignes : les seuls clients à avoir commandé un produit de la catégorie Jouets.",
         commentaire: "Trois sous-requêtes s'enchaînent, chacune donnant sa liste à la suivante : les produits Jouets, puis les commandes qui en contiennent un, puis les clients de ces commandes. Chaque IN accepte sans difficulté une liste de plusieurs valeurs."
       },
@@ -3309,6 +4033,7 @@ const CHAPITRES = [
       exemple: {
         titre: "0 ligne, et pourtant 31 clients concernés",
         code: "SELECT id FROM clients WHERE id NOT IN (SELECT parrain_id FROM clients);",
+        lignes: [0],
         resultat: "0 ligne — alors que 31 clients n'ont jamais parrainé personne.",
         commentaire: "La sous-requête renvoie 9 identifiants et 31 NULL. Ce seul fait suffit à rendre NOT IN incapable de répondre « vrai » pour qui que ce soit : le résultat tombe à 0, sans qu'aucun message ne le signale."
       },
@@ -3330,6 +4055,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Une moyenne différente pour chaque client",
         code: "SELECT o.id FROM commandes o WHERE o.client_id = 201 AND (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) > (SELECT AVG(m.total) FROM (SELECT SUM(l2.quantite*l2.prix_unitaire) AS total FROM commandes o2 JOIN lignes_commande l2 ON l2.commande_id = o2.id WHERE o2.client_id = o.client_id GROUP BY o2.id) AS m);",
+        lignes: [2],
         resultat: "2 lignes : les commandes 1001 et 1019, les deux seules du client 201 à dépasser SA moyenne de 781,50 €.",
         commentaire: "o2.client_id = o.client_id est la référence qui corrèle la sous-requête : retirée, elle calculerait la moyenne de TOUTES les commandes de la boutique, pas seulement celles de 201, et répondrait à une question différente."
       },
@@ -3351,6 +4077,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Une étape, puis la suite",
         code: "WITH par_commande AS (SELECT l.commande_id, SUM(l.quantite*l.prix_unitaire) AS montant FROM lignes_commande l GROUP BY l.commande_id) SELECT SUM(c.montant) FROM par_commande c JOIN commandes o ON o.id = c.commande_id WHERE o.statut NOT IN ('annulee', 'retournee');",
+        lignes: [1],
         resultat: "12 387,00 € — le chiffre d'affaires produits de toute la boutique.",
         commentaire: "par_commande calcule d'abord, une fois pour toutes, le montant de chaque commande. La jointure qui suit ne voit plus qu'UNE ligne par commande : aucun montant ne peut y être compté deux fois."
       },
@@ -3372,6 +4099,7 @@ const CHAPITRES = [
       exemple: {
         titre: "70 lignes, ou 34 ?",
         code: "SELECT client_id, COUNT(*) AS nb FROM commandes GROUP BY client_id;\nSELECT id, client_id, COUNT(*) OVER (PARTITION BY client_id) AS nb_commandes_du_client FROM commandes;",
+        lignes: [34, 70],
         resultat: "Le premier renvoie 34 lignes (un par client qui a commandé). Le second en renvoie 70, chacune portant en plus le nombre total de commandes de son client.",
         commentaire: "Le second résultat ne cache rien : la commande 1001 du client 201 s'affiche avec sa propre ligne, ET avec le nombre de commandes de 201 recopié à côté. GROUP BY aurait perdu la commande elle-même pour ne garder que ce total ; OVER (PARTITION BY ...) garde les deux informations à la fois, prêtes à être comparées sur une même ligne — exactement ce qu'il faudra au chapitre suivant pour repérer un rang."
       },
@@ -3393,6 +4121,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Une égalité à 1 299 €, deux façons différentes de la traiter",
         code: "SELECT id, prix, RANK() OVER (ORDER BY prix DESC) AS rang, DENSE_RANK() OVER (ORDER BY prix DESC) AS rang_dense FROM produits WHERE id IN (101, 109, 110) ORDER BY prix DESC;",
+        lignes: [3],
         resultat: "101 et 109, tous deux à 1 299,00 €, reçoivent le rang 1 ; 110, à 34,00 €, reçoit le rang 3 avec RANK, mais le rang 2 avec DENSE_RANK.",
         commentaire: "RANK compte les deux lignes déjà classées (101 et 109) avant d'attribuer le rang 3 à 110. DENSE_RANK, lui, ne compte qu'UNE valeur distincte déjà vue (1 299,00 €) et attribue le rang 2."
       },
@@ -3414,6 +4143,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Deux par catégorie, sauf une qui en donne trois",
         code: "SELECT categorie_id, id, prix FROM (SELECT id, categorie_id, prix, RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) AS rg FROM produits) WHERE rg <= 2;",
+        lignes: [13],
         resultat: "13 lignes, et non 12 : la catégorie Informatique en fournit 3 (101, 102, 103), les deux derniers à égalité au rang 2.",
         commentaire: "Cinq catégories fournissent exactement 2 lignes chacune. Informatique en fournit 3, parce que 102 et 103 (449,00 € chacun) se partagent vraiment le rang 2 : RANK <= 2 les garde l'un ET l'autre."
       },
@@ -3435,6 +4165,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Juillet, puis directement septembre",
         code: "WITH m AS (SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) AS nb FROM commandes GROUP BY mois) SELECT mois, nb, LAG(nb) OVER (ORDER BY mois) AS mois_precedent FROM m WHERE mois IN ('2025-07', '2025-09');",
+        lignes: [2],
         resultat: "Juillet affiche 4 commandes ; septembre, aussi 4, avec mois_precedent valant 4 — la valeur de juillet, pas celle d'un mois d'août qui n'existe pas dans ce résultat.",
         commentaire: "Aucune commande n'a été passée en août 2025 : GROUP BY ne produit donc aucune ligne pour ce mois. LAG, en septembre, se tourne vers la dernière ligne qui existe réellement avant elle : juillet."
       },
@@ -3456,6 +4187,7 @@ const CHAPITRES = [
       exemple: {
         titre: "Un total qui grandit mois après mois",
         code: "WITH m AS (SELECT strftime('%Y-%m', o.date_commande) AS mois, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY mois) SELECT mois, ca, SUM(ca) OVER (ORDER BY mois) AS cumul FROM m WHERE mois IN ('2025-01', '2025-02', '2025-03');",
+        lignes: [3],
         resultat: "1 377,75 € en janvier (cumul : 1 377,75 €), 553,50 € en février (cumul : 1 931,25 €), 626,50 € en mars (cumul : 2 557,75 €).",
         commentaire: "Chaque cumul additionne le chiffre d'affaires du mois à celui de TOUS les mois précédents. Le dernier mois de la boutique, juin 2026, afficherait un cumul de 12 387,00 € — le chiffre d'affaires produits de toute la période."
       },
@@ -3477,12 +4209,400 @@ const CHAPITRES = [
       exemple: {
         titre: "34 jours d'attente, au 30 juin 2026",
         code: "SELECT id, date_commande, julianday('2026-06-30') - julianday(date_commande) AS jours FROM commandes WHERE statut = 'expediee' ORDER BY jours DESC;",
+        lignes: [5],
         resultat: "5 lignes, de 34 jours (commande 1062, du 27 mai 2026) à 3 jours (commande 1067, du 27 juin 2026).",
         commentaire: "Chaque ligne obtient un nombre de jours directement comparable : pas besoin d'extraire l'année ou le mois, julianday mesure une durée complète, jours compris."
       },
       astuce: "Dès qu'une question porte sur une DURÉE entre deux dates (un délai, un retard, une ancienneté), pensez julianday. Dès qu'elle porte sur une PARTIE d'une date (l'année, le mois, pour regrouper ou filtrer), pensez strftime — les deux ne se remplacent jamais l'un l'autre."
     },
     exercices: ["p4-36", "p4-37", "p4-38"]
+  },
+
+  /* ══ PALIER 5 — MÉTIER (lot 10, D068) ══════════════════════════════════════════════════════════════════
+     Huit chapitres sur l'EXPORT BRUT (`jeu: "export"` : la leçon, son exemple testable et les exercices du
+     chapitre travaillent sur src/seed-sale.sql), cinq sur la boutique, et trois de culture générale SANS
+     exercice — l'index, l'écriture, la CTE récursive en bonus (D021). Un chapitre sans exercice est terminé
+     dès que sa leçon a été ouverte (D068), sinon il resterait « en cours » pour toujours. ══════════════ */
+
+  {
+    id: "ch-p5-1", niveau: "P5", jeu: "export", titre: "Un export brut : ce qu'on reçoit vraiment", duree: "6 min",
+    resume: "Quatre fichiers sans clé, sans contrainte, tout en texte : pourquoi une base n'a rien empêché, et ce que cela change pour vous.",
+    lecon: {
+      intro: "Jusqu'ici, vous avez travaillé sur une base conçue : des types justes, des clés primaires, des clés étrangères, des contraintes qui refusent l'absurde. Ce palier commence par l'autre réalité du métier — un export brut, c'est-à-dire des fichiers produits par un système qui n'est pas le vôtre, que personne n'a relus, et dont la base ne garantit rien. L'analyse ne commence pas ici : elle commence après le nettoyage, et le nettoyage commence par un inventaire de ce qui cloche.",
+      points: [
+        "Ce jeu contient quatre fichiers : export_clients (20 lignes), export_commandes_2025 (18), export_commandes_2026 (14) et export_livraisons (16). Ouvrez le panneau « Schéma » : il bascule entre la boutique et l'export brut, et vous pouvez afficher n'importe lequel de ces fichiers en entier.",
+        "Aucune clé primaire, aucune clé étrangère, aucun CHECK, aucun NOT NULL, et les 24 colonnes sont déclarées TEXT. Une base ne refuse que ce qu'on lui a demandé de refuser — ici, on ne lui a rien demandé.",
+        "Les deux fichiers de commandes ont les MÊMES colonnes : l'export a été découpé par période. Deux commandes figurent dans les deux fichiers, ce qui n'est visible nulle part tant qu'on ne les a pas empilés.",
+        "Les identifiants de ce jeu (5001 à 5030, L-001 à L-016) ne ressemblent à aucun de ceux de la boutique : si vous mélangez les deux jeux par erreur, le résultat sera vide, donc repérable.",
+        "La règle de travail de tout ce palier : on ne calcule RIEN sur un export avant d'avoir compté ce qui est inexploitable. Un total faux ne se signale jamais tout seul."
+      ],
+      exemple: {
+        titre: "Les quatre fichiers et leur taille",
+        code: "SELECT 'export_clients' AS fichier, COUNT(*) AS lignes FROM export_clients\nUNION ALL SELECT 'export_commandes_2025', COUNT(*) FROM export_commandes_2025\nUNION ALL SELECT 'export_commandes_2026', COUNT(*) FROM export_commandes_2026\nUNION ALL SELECT 'export_livraisons', COUNT(*) FROM export_livraisons;",
+        lignes: [4],
+        resultat: "4 lignes : 20, 18, 14 et 16 — 68 lignes en tout.",
+        commentaire: "UNION ALL sert ici à empiler quatre résultats d'une ligne chacun pour en faire un tableau. C'est aussi, à cette échelle, un rappel utile : 68 lignes s'inspectent à l'œil, et tout ce que vous trouverez par une requête, vous pourrez le vérifier vous-même dans le Schéma."
+      },
+      astuce: "Devant un fichier inconnu, la toute première requête n'est jamais un calcul : c'est un comptage. Combien de lignes, combien de valeurs distinctes, combien de vides. Les trois chiffres disent déjà presque tout."
+    },
+    exercices: ["p5-01", "p5-02"]
+  },
+  {
+    id: "ch-p5-2", niveau: "P5", jeu: "export", titre: "Quatre façons de ne rien dire", duree: "7 min",
+    resume: "NULL, chaîne vide, « N/A », « -- » : quatre manières d'écrire qu'une valeur manque, dont une seule est reconnue par IS NULL.",
+    lecon: {
+      intro: "Dans une base conçue, une valeur manquante s'écrit NULL, et IS NULL suffit à la trouver. Dans un export, « rien » s'écrit de toutes les façons que les logiciels et les humains ont inventées : la case réellement vide, la chaîne de longueur zéro, et les conventions écrites — « N/A », « -- », « inconnu », « néant ». Les trois dernières sont du TEXTE pour la base : elles passent tous les filtres, entrent dans tous les regroupements, et deviennent des valeurs comme les autres.",
+      points: [
+        "IS NULL ne répond qu'à une question : la case est-elle vide au sens de la base ? Une chaîne vide ('') n'est PAS NULL, elle a seulement une longueur de zéro.",
+        "COUNT(colonne) compte les valeurs non NULL : il compte donc « N/A » et '' comme des valeurs renseignées, et son résultat est trop élevé.",
+        "Le contrôle complet se fait en deux temps : IS NULL d'un côté, et la liste des textes qui veulent dire « rien » de l'autre, réunis par OR.",
+        "Comparez toujours la forme NORMALISÉE à cette liste — TRIM(ville) IN ('', 'N/A', '--') —, sinon un « N/A » précédé d'un espace y échappe.",
+        "Dresser cette liste fait partie du travail : elle dépend du fichier, et aucune requête ne peut la deviner à votre place."
+      ],
+      exemple: {
+        titre: "Trois comptes sur une même colonne",
+        code: "SELECT COUNT(*) AS lignes,\n       COUNT(ville) AS non_null,\n       SUM(TRIM(ville) IN ('', 'N/A', '--')) AS fausses_valeurs\nFROM export_clients;",
+        lignes: [1],
+        resultat: "20 lignes, 19 villes « renseignées » selon la base, dont 3 ne veulent rien dire.",
+        commentaire: "La deuxième colonne est celle qu'on croit juste ; la troisième dit de combien elle se trompe. Les villes réellement exploitables sont 16, et c'est ce nombre-là qu'il faut citer quand on présente le fichier."
+      },
+      astuce: "SUM(condition) compte les lignes qui vérifient une condition : en SQLite, une condition vraie vaut 1 et une condition fausse vaut 0. C'est le moyen le plus court de compter plusieurs choses différentes en une seule requête."
+    },
+    exercices: ["p5-03", "p5-04", "p5-05"]
+  },
+  {
+    id: "ch-p5-3", niveau: "P5", jeu: "export", titre: "Une ville, quatre orthographes", duree: "8 min",
+    resume: "La casse se voit en regardant le fichier ; l'espace parasite ne se trouve qu'en l'interrogeant. Deux saletés, deux méthodes.",
+    lecon: {
+      intro: "Une colonne de texte saisie à la main contient toujours plusieurs orthographes de la même valeur. Ce chapitre en traite deux à la fois, et c'est autant une leçon de MÉTHODE que de syntaxe : certaines saletés se voient à l'œil, d'autres ne se trouvent que par une requête. « Lyon », « LYON » et « lyon » sautent aux yeux dès qu'on affiche le fichier. Un espace de trop à la fin d'un mot ne se voit nulle part — ni dans le fichier, ni à l'écran, ni dans un message d'erreur — et il fait pourtant exactement autant de dégâts.",
+      points: [
+        "Affichez le fichier entier dans le Schéma : vous verrez les différences de casse. Vous ne verrez PAS les espaces de début et de fin, parce qu'aucun affichage ne les montre.",
+        "Pour trouver ce qui ne se voit pas, il faut le demander : WHERE ville <> TRIM(ville) donne les lignes dont la valeur change quand on retire ses bords, c'est-à-dire exactement celles qui portent un espace parasite.",
+        "L'autre moyen de rendre l'invisible visible est de l'encadrer : '[' || ville || ']' affiche les bords de la valeur, et l'espace apparaît.",
+        "UPPER(TRIM(colonne)) est la forme normalisée standard d'une colonne de texte. On regroupe, on compare et on joint TOUJOURS sur cette forme, jamais sur la colonne brute.",
+        "Normaliser ne supprime pas les fausses valeurs : « N/A » normalisé reste « N/A ». Les deux nettoyages du chapitre précédent et de celui-ci sont indépendants, et il faut les deux."
+      ],
+      exemple: {
+        titre: "Cinq clients lyonnais, quatre groupes",
+        code: "SELECT ville, '[' || ville || ']' AS entre_crochets, COUNT(*) AS n\nFROM export_clients\nWHERE UPPER(TRIM(ville)) = 'LYON'\nGROUP BY ville\nORDER BY ville;",
+        lignes: [4],
+        resultat: "4 lignes : « lyon » entouré d'espaces, « LYON », « Lyon » (2 clients) et « Lyon » suivi d'un espace.",
+        commentaire: "La colonne du milieu est là pour une seule raison : rendre visibles les espaces que la première colonne cache. Sans les crochets, deux des quatre lignes semblent identiques — et un lecteur pressé conclurait à un bug de l'affichage."
+      },
+      astuce: "Quand deux lignes d'un résultat ont l'air identiques sans l'être, encadrez la valeur avec || : si la différence est un espace, elle apparaît aussitôt. C'est le réflexe qui fait gagner le plus de temps sur des données sales."
+    },
+    exercices: ["p5-06", "p5-07", "p5-08"]
+  },
+  {
+    id: "ch-p5-4", niveau: "P5", jeu: "export", titre: "Des nombres qui n'en sont pas", duree: "8 min",
+    resume: "Une colonne de nombres stockée en texte ne provoque jamais d'erreur : elle produit des totaux faux et des comparaisons dans l'ordre du dictionnaire.",
+    lecon: {
+      intro: "Dans un export, les nombres arrivent presque toujours en texte : la colonne est déclarée TEXT, et elle contient « 120 », « 1 200 » avec un séparateur de milliers, « 149,50 » avec une virgule, et « N/A » là où personne n'a rien saisi. SQLite ne refuse rien de tout cela. Il convertit à la volée, du mieux qu'il peut, et ne dit jamais ce qu'il a dû abandonner — c'est ce silence qui rend l'anomalie dangereuse.",
+      points: [
+        "La conversion lit les caractères depuis le début et s'arrête au premier qui ne convient plus : '1 200' + 0 vaut 1, pas 1200. '12ans' + 0 vaut 12. 'N/A' + 0, '' + 0 et '--' + 0 valent 0.",
+        "Une comparaison entre une colonne de texte et un nombre se fait dans l'ordre du DICTIONNAIRE : « 9 » est plus grand que « 100 », comme « z » est après « ab ».",
+        "CAST(valeur AS INTEGER) ou AS REAL convertit explicitement. Mais il convertit ce qu'on lui donne : il faut donc réparer le texte AVANT.",
+        "REPLACE(texte, ancien, nouveau) répare : REPLACE(montant, ' ', '') retire le séparateur de milliers, REPLACE(montant, ',', '.') remplace la virgule décimale par le point que SQLite attend.",
+        "L'ordre est donc toujours le même : REPLACE d'abord, CAST ensuite. L'inverse tronque la valeur avant de l'avoir réparée."
+      ],
+      exemple: {
+        titre: "Mille deux cents points qui en valent un",
+        code: "SELECT SUM(points_fidelite) AS somme_brute,\n       SUM(CAST(REPLACE(points_fidelite, ' ', '') AS INTEGER)) AS somme_reparee\nFROM export_clients;",
+        lignes: [1],
+        resultat: "735 d'un côté, 1934 de l'autre : 1199 points de différence.",
+        commentaire: "Tout l'écart vient d'UNE seule ligne, celle du client dont les points sont écrits « 1 200 ». Aucune erreur, aucun avertissement : la première somme a l'air d'un total parfaitement ordinaire, et c'est pour cela qu'elle serait passée."
+      },
+      astuce: "Devant une colonne de nombres en texte, calculez toujours la somme des DEUX façons avant de choisir. Si les deux sont égales, la colonne est propre ; si elles diffèrent, vous venez de mesurer exactement ce que la conversion silencieuse vous coûtait."
+    },
+    exercices: ["p5-09", "p5-10", "p5-11"]
+  },
+  {
+    id: "ch-p5-5", niveau: "P5", jeu: "export", titre: "Des dates dans tous les formats", duree: "8 min",
+    resume: "SQLite ne lit que AAAA-MM-JJ. Tout le reste devient NULL en silence — et une date réparée peut être valide sans exister.",
+    lecon: {
+      intro: "SQLite n'a pas de type « date » : une date est un texte, et il n'en comprend qu'un seul format, AAAA-MM-JJ. Un export, lui, contient tous les formats que les pays et les logiciels ont inventés. La conséquence n'est pas une erreur, c'est un NULL : date('12/04/2024') ne plante pas, il renvoie NULL, et toute l'arithmétique de dates qui suit s'effondre silencieusement.",
+      points: [
+        "date(valeur) renvoie la date si elle sait la lire, et NULL sinon : c'est donc autant un test de lisibilité qu'une conversion. WHERE date(colonne) IS NULL recense les lignes inexploitables.",
+        "Un calcul de délai sur une colonne à moitié illisible ne plante pas : il porte seulement sur les lignes lisibles, et la moyenne obtenue ne dit pas sur combien de lignes elle a été calculée.",
+        "Réparer un format se fait avec substr(texte, départ, longueur) et l'opérateur de collage ||, en déplaçant les morceaux : dans jj/mm/aaaa, l'année commence au 7ᵉ caractère, le mois au 4ᵉ, le jour au 1ᵉʳ.",
+        "Cette réparation est purement mécanique : elle déplace des caractères, elle ne vérifie rien. « 31/02/2025 » devient « 2025-02-31 », qui a le bon format et ne désigne aucun jour réel.",
+        "Et SQLite ne refuse pas non plus cette date-là : il la COMPTE. date('2025-02-31') renvoie '2025-03-03', c'est-à-dire 31 jours après le 1ᵉʳ février. La date devient valide, utilisable, et fausse de trois jours.",
+        "Certaines valeurs ne se réparent pas du tout — « 14 mars 2025 », « inconnue ». Les recenser et les écarter explicitement vaut mieux que les laisser devenir des NULL au milieu d'un calcul."
+      ],
+      exemple: {
+        titre: "Un quart des dates est illisible",
+        code: "SELECT COUNT(*) AS lignes,\n       SUM(date(date_inscription) IS NOT NULL) AS lisibles,\n       SUM(date(date_inscription) IS NULL) AS illisibles\nFROM export_clients;",
+        lignes: [1],
+        resultat: "20 lignes : 15 lisibles, 5 illisibles.",
+        commentaire: "Une ancienneté moyenne calculée sur ce fichier porterait donc sur 15 clients sur 20, sans que rien ne l'indique. Ce chiffre de 5 est exactement ce qu'il faut citer à côté du résultat — ou corriger avant de le produire."
+      },
+      astuce: "Avant tout calcul sur des dates venues d'un export, comptez combien de lignes date() ne sait pas lire. Si ce nombre n'est pas zéro, aucune moyenne, aucun délai, aucun regroupement par mois n'est fiable tant qu'il n'est pas traité."
+    },
+    exercices: ["p5-12", "p5-13", "p5-14"]
+  },
+  {
+    id: "ch-p5-6", niveau: "P5", jeu: "export", titre: "Les doublons : la même entité deux fois", duree: "7 min",
+    resume: "Sans clé primaire, un identifiant peut se répéter — et la même personne peut exister sous deux identifiants différents.",
+    lecon: {
+      intro: "Dans la boutique, la clé primaire garantit qu'un client est une ligne et une ligne un client. Dans un export, cette garantie n'existe pas, et le doublon prend deux formes opposées : le même identifiant sur deux lignes, et la même entité réelle sous deux identifiants différents. La première se trouve en comptant ; la seconde ne se trouve qu'en décidant ce qui identifie vraiment l'entité.",
+      points: [
+        "Le contrôle de doublon standard est toujours le même : GROUP BY colonne HAVING COUNT(*) > 1. Sur un export, on le passe d'abord sur l'identifiant lui-même, pour savoir s'il identifie réellement quelque chose.",
+        "Le même identifiant sur deux lignes porte presque toujours des différences MINEURES : une adresse en majuscules d'un côté, un format de date différent de l'autre. C'est la signature d'une double saisie, pas d'une copie.",
+        "La même personne sous deux identifiants ne se trouve que sur une valeur métier : une adresse électronique, un numéro de SIRET, un couple nom + date de naissance. À vous de choisir laquelle fait foi.",
+        "Cette valeur se compare toujours NORMALISÉE : LOWER(TRIM(email)). Deux adresses qui ne diffèrent que par la casse désignent la même boîte aux lettres.",
+        "Le nombre de lignes d'un fichier n'est donc jamais le nombre d'entités qu'il décrit : 20 lignes peuvent faire 19 identifiants et 18 personnes. Dites laquelle des trois réponses vous donnez."
+      ],
+      exemple: {
+        titre: "Deux doublons, deux formes",
+        code: "SELECT TRIM(id) AS id, nom_complet, email\nFROM export_clients\nWHERE TRIM(id) IN ('204', '205', '206')\nORDER BY id, email;",
+        lignes: [4],
+        resultat: "4 lignes : l'identifiant 204 deux fois (même personne, adresse en deux casses), puis 205 et 206 — Hugo Robert sous deux identifiants.",
+        commentaire: "Les deux anomalies sont côte à côte et n'ont rien en commun : la première se trouve en comptant les identifiants, la seconde en comparant les adresses. Aucun contrôle ne trouve les deux."
+      },
+      astuce: "Posez toujours les deux questions, dans cet ordre : « mon identifiant est-il unique ? », puis « deux identifiants différents désignent-ils la même chose ? ». La seconde demande de choisir ce qui identifie l'entité pour le métier — c'est une décision, pas une requête."
+    },
+    exercices: ["p5-15", "p5-16", "p5-17"]
+  },
+  {
+    id: "ch-p5-7", niveau: "P5", jeu: "export", titre: "Les contrôles de cohérence", duree: "9 min",
+    resume: "Deux colonnes valides chacune de son côté peuvent se contredire ensemble. Et une clé qui ne retombe sur rien fait disparaître des lignes.",
+    lecon: {
+      intro: "Les chapitres précédents nettoyaient des valeurs, une colonne à la fois. Celui-ci s'attaque à ce qu'aucun nettoyage de colonne ne peut voir : les contradictions ENTRE colonnes, entre lignes, entre fichiers. C'est exactement ce qu'une base conçue fait respecter avec ses CHECK et ses clés étrangères — et que personne ne fait respecter ici.",
+      points: [
+        "Un contrôle de cohérence compare deux colonnes de la même ligne, pas une colonne à une constante : WHERE date_livraison < date_commande, WHERE date_fin < date_debut.",
+        "Un contrôle de domaine confronte une colonne à la liste des valeurs attendues : LOWER(TRIM(statut)) NOT IN (…). Sans CHECK, cette liste est à vous, et c'est à vous de compter ce qui en sort.",
+        "Un contrôle de plausibilité cherche l'impossible : un montant négatif, un poids négatif, une date postérieure à aujourd'hui, un âge de 200 ans.",
+        "Un contrôle d'intégrité cherche les clés qui ne retombent sur rien, par anti-jointure : LEFT JOIN … WHERE la_cle_de_droite IS NULL. C'est ce que la clé étrangère garantissait dans la boutique.",
+        "Cette anti-jointure se fait sur des clés NORMALISÉES des deux côtés. Un espace invisible d'un seul côté invente des orphelins qui n'en sont pas — ou, dans l'autre sens, fait disparaître des lignes bien réelles d'un rapprochement.",
+        "Les lignes trouvées ne se suppriment pas en silence : on les compte, on les écarte explicitement, et on dit à côté du résultat combien on en a écarté."
+      ],
+      exemple: {
+        titre: "Trois lignes impossibles",
+        code: "SELECT id, date_commande, date_livraison, statut\nFROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026)\nWHERE id IN ('5009', '5010', '5016')\nORDER BY id;",
+        lignes: [3],
+        resultat: "3 lignes : une livrée 8 jours AVANT d'être passée, une au montant négatif, une au statut vide.",
+        commentaire: "Aucune des trois n'aurait pu entrer dans la boutique : le CHECK sur le statut, et la relecture humaine pour les deux autres. Ici, elles sont là depuis le début et rien ne les a jamais signalées."
+      },
+      astuce: "Écrivez vos contrôles de cohérence AVANT vos calculs, et gardez-les : ce sont eux que vous relancerez au prochain export. Un contrôle qui ne renvoie plus rien est une bonne nouvelle ; un contrôle qu'on n'a jamais écrit ne dit rien du tout."
+    },
+    exercices: ["p5-18", "p5-19", "p5-20"]
+  },
+  {
+    id: "ch-p5-8", niveau: "P5", jeu: "export", titre: "UNION : empiler deux fichiers", duree: "8 min",
+    resume: "UNION ALL empile tout, UNION retire les lignes strictement identiques — et laisse passer celles qui diffèrent d'un espace.",
+    lecon: {
+      intro: "Un export arrive rarement en un seul fichier : il est découpé par période, par filiale, par lot. Les rassembler est le premier geste de l'analyse, et SQL a pour cela deux opérateurs d'une ligne — qui ne font pas du tout la même chose. Les mêmes opérateurs servent aussi, sur une base propre, à comparer deux populations : les clients de l'an dernier et ceux de cette année, par exemple.",
+      points: [
+        "UNION ALL empile sans rien examiner : le total est toujours la somme exacte des deux, doublons compris. C'est le plus rapide, et c'est ce qu'on veut quand on sait que les sources ne se recouvrent pas.",
+        "UNION empile puis retire les lignes en double. Attention à ce que « en double » veut dire : la ligne ENTIÈRE, colonne par colonne. Une seule valeur qui diffère, fût-ce d'un espace invisible, et les deux lignes sont conservées.",
+        "Sur des données sales, UNION ne suffit donc jamais : on normalise les colonnes de texte AVANT d'empiler, sinon il laisse passer exactement les doublons qu'on comptait sur lui pour retirer.",
+        "Après un UNION, repassez un contrôle de doublon sur la clé : ce qu'il trouve encore est précisément ce que la normalisation a oublié.",
+        "Les deux parties d'un UNION doivent avoir le même nombre de colonnes, dans le même ordre. Les noms, eux, sont ceux de la première partie.",
+        "INTERSECT garde ce qui est dans les deux ensembles, EXCEPT ce qui est dans le premier et pas dans le second. Trois opérateurs, trois questions : « au moins une des deux », « les deux », « la première sans la seconde »."
+      ],
+      exemple: {
+        titre: "Trente-deux lignes, trente et une, trente commandes",
+        code: "SELECT (SELECT COUNT(*) FROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026)) AS avec_union_all,\n       (SELECT COUNT(*) FROM (SELECT * FROM export_commandes_2025 UNION SELECT * FROM export_commandes_2026)) AS avec_union,\n       (SELECT COUNT(DISTINCT id) FROM (SELECT * FROM export_commandes_2025 UNION ALL SELECT * FROM export_commandes_2026)) AS commandes_reelles;",
+        lignes: [1],
+        resultat: "32, 31 et 30.",
+        commentaire: "UNION a retiré une des deux lignes présentes en double, celle qui était recopiée à l'identique. Il a gardé l'autre, dont le statut porte un espace final. L'écart entre 31 et 30 est exactement la mesure de ce qu'il n'a pas vu."
+      },
+      astuce: "Quand UNION laisse passer un doublon, ne cherchez pas l'erreur dans l'opérateur : cherchez la colonne qui diffère. Comparez les deux lignes champ par champ, en encadrant les valeurs avec || — c'est presque toujours un espace."
+    },
+    exercices: ["p5-21", "p5-22", "p5-23"]
+  },
+  {
+    id: "ch-p5-9", niveau: "P5", titre: "« Le chiffre d'affaires » : une question, cinq chiffres", duree: "9 min",
+    resume: "Retour sur la base propre : cinq montants tous exacts pour une seule question, et deux décisions qu'elle ne prend pas.",
+    lecon: {
+      intro: "Les huit chapitres précédents nettoyaient des données. Celui-ci ouvre l'autre moitié du métier, et la plus difficile : traduire une question posée en français, par quelqu'un qui n'écrit pas de SQL, en une requête qui a UNE réponse. Les données sont de nouveau propres — la boutique, celle des quatre premiers paliers. Le problème n'est plus dans les données, il est dans la question.",
+      points: [
+        "« Le chiffre d'affaires » n'existe pas. Sur cette base, selon ce qu'on inclut : 16 233,50 € tous statuts, 12 724,50 € hors annulées, 12 387,00 € ni annulées ni retournées, 12 619,00 € en ajoutant les frais de port, 11 490,00 € sur les seules livrées.",
+        "Deux décisions séparent ces cinq chiffres, et aucune n'est technique : quels statuts de commande comptent, et les frais de port font-ils partie du chiffre d'affaires ou sont-ils une refacturation du transport ?",
+        "Ce cours fixe deux termes, et les consignes les emploient toujours en entier : le CHIFFRE D'AFFAIRES PRODUITS (quantité × prix facturé, sur les commandes ni annulee ni retournee, frais de port exclus) et le CHIFFRE D'AFFAIRES TOTAL (le précédent, plus les frais de port, comptés une fois par commande).",
+        "Un filtre par la négative est presque toujours un piège de vocabulaire : « sauf les annulées » laisse entrer les retournées, qui ont pourtant été remboursées. Listez ce que vous gardez, ou listez tout ce que vous écartez.",
+        "Un chiffre communiqué sans sa définition ne vaut rien. La phrase qui dit ce qu'il compte fait partie du livrable, au même titre que le nombre."
+      ],
+      exemple: {
+        titre: "Les cinq chiffres côte à côte",
+        code: "SELECT\n  (SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l) AS tous_statuts,\n  (SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee') AS hors_annulees,\n  (SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut NOT IN ('annulee','retournee')) AS ca_produits,\n  (SELECT SUM(l.quantite * l.prix_unitaire) FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut = 'livree') AS livrees_seules;",
+        lignes: [1],
+        resultat: "16 233,50 · 12 724,50 · 12 387,00 · 11 490,00.",
+        commentaire: "Quatre requêtes presque identiques, quatre nombres dont l'écart extrême atteint 4 743,50 €, et aucune erreur nulle part. C'est la question qui était incomplète, et c'est à elle qu'il faut revenir."
+      },
+      astuce: "Quand une demande parle d'argent, posez systématiquement les deux questions avant d'écrire : « quels statuts est-ce que je compte ? » et « est-ce que les frais de port en font partie ? ». Deux phrases de conversation qui évitent des mois de chiffres faux."
+    },
+    exercices: ["p5-24", "p5-25", "p5-26", "p5-27"]
+  },
+  {
+    id: "ch-p5-10", niveau: "P5", titre: "« Le produit le plus vendu » : trois gagnants", duree: "9 min",
+    resume: "Trois lectures de « le plus vendu », trois produits différents, et une lecture qui ne désigne même pas un gagnant unique.",
+    lecon: {
+      intro: "Le chapitre précédent montrait une question dont les lectures donnent des nombres différents. Celui-ci va plus loin : les lectures donnent des OBJETS différents. « Notre produit le plus vendu » désigne trois produits sans rapport selon ce qu'on entend par « vendu », et la troisième lecture n'en désigne même pas un seul — ils sont deux, ex æquo.",
+      points: [
+        "En unités écoulées, c'est le produit 113, Bougies chauffe-plat, avec 21 unités : un article à 3,50 €.",
+        "En chiffre d'affaires, c'est le produit 101, Ordinateur portable 15 pouces, avec 5 146,00 € pour quatre unités seulement.",
+        "En nombre de commandes où il apparaît, ce sont les produits 106 et 107, à 9 commandes chacun : une égalité, donc pas de réponse unique.",
+        "Aucune des trois n'est fausse : SUM(quantite) mesure un volume, SUM(quantite * prix_unitaire) une valeur, COUNT(DISTINCT commande_id) une fréquence d'achat. La requête ne peut pas choisir à la place du métier.",
+        "Le choix dépend de l'usage : réapprovisionner un stock appelle les unités, arbitrer un budget appelle les euros, dessiner une page d'accueil appelle la fréquence.",
+        "Un LIMIT 1 posé sur un classement suppose qu'il n'y a pas d'égalité en tête. Quand il y en a une, il la cache sans rien signaler : c'est le piège du palier 4, revenu ici sous la forme d'une question métier."
+      ],
+      exemple: {
+        titre: "Deux lectures, deux produits",
+        code: "SELECT 'en unites' AS lecture, p.id, p.nom, SUM(l.quantite) AS mesure\nFROM produits p JOIN lignes_commande l ON l.produit_id = p.id JOIN commandes o ON o.id = l.commande_id\nWHERE o.statut <> 'annulee' GROUP BY p.id ORDER BY mesure DESC LIMIT 1;",
+        lignes: [1],
+        resultat: "113, Bougies chauffe-plat, 21 unités.",
+        commentaire: "Remplacez SUM(l.quantite) par SUM(l.quantite * l.prix_unitaire) et relancez : le gagnant devient l'ordinateur portable, à 5 146,00 €. Une seule expression change, et la réponse n'a plus rien à voir."
+      },
+      astuce: "Devant un superlatif — « le plus vendu », « le meilleur client », « la meilleure catégorie » —, demandez toujours « le plus de QUOI ? ». Tant que cette question n'a pas de réponse, la requête n'en a pas non plus."
+    },
+    exercices: ["p5-28", "p5-29", "p5-30", "p5-31"]
+  },
+  {
+    id: "ch-p5-11", niveau: "P5", titre: "« Un client actif » : la définition cache une date", duree: "8 min",
+    resume: "« Actif » n'est écrit nulle part dans la base : c'est une date de référence, une population et une condition — de 26 à 12 selon les choix.",
+    lecon: {
+      intro: "Certaines notions métier n'ont aucune colonne qui leur corresponde. « Client actif », « client fidèle », « commande en retard », « produit en rupture » : aucune de ces expressions n'existe dans le schéma. Elles se construisent, et chaque construction est une suite de décisions. La plus souvent oubliée est la date : « actif » suppose toujours « depuis quand ».",
+      points: [
+        "Traduire une notion métier demande trois choses : une date de référence (depuis quand ?), une population (des clients, des commandes ?) et une condition (qu'est-ce qui compte comme activité ?).",
+        "Ici, la date de référence de tout le cours est le 30 juin 2026, et elle s'écrit toujours en littéral : '2026-06-30'. « Depuis le début de l'année » et « au cours des six derniers mois » donnent deux bornes différentes.",
+        "La population demandée est presque toujours celle des clients, pas celle des commandes : COUNT(DISTINCT client_id), jamais COUNT(*).",
+        "La condition change tout : toutes commandes confondues, 26 clients sont actifs depuis le 1ᵉʳ janvier 2026 ; en écartant les annulées, 22 ; en ne gardant que les livrées, 12.",
+        "Entre la définition la plus large et la plus stricte, ce jeu passe donc de 26 à 12 — moins de la moitié. Un indicateur de pilotage sans sa définition écrite n'est pas un indicateur.",
+        "Le danger le plus courant n'est pas de choisir la mauvaise définition, c'est d'en changer sans s'en apercevoir entre la réunion et la requête."
+      ],
+      exemple: {
+        titre: "Trois définitions, trois chiffres",
+        code: "SELECT\n  COUNT(DISTINCT CASE WHEN date_commande >= '2026-01-01' THEN client_id END) AS toutes_commandes,\n  COUNT(DISTINCT CASE WHEN date_commande >= '2026-01-01' AND statut <> 'annulee' THEN client_id END) AS hors_annulees,\n  COUNT(DISTINCT CASE WHEN date_commande >= '2026-01-01' AND statut = 'livree' THEN client_id END) AS livrees_seules\nFROM commandes;",
+        lignes: [1],
+        resultat: "26, 22 et 12.",
+        commentaire: "CASE WHEN à l'intérieur d'un COUNT(DISTINCT …) permet de poser les trois questions en une seule passe : la condition ne filtre plus les lignes, elle choisit ce qui entre dans chaque compte."
+      },
+      astuce: "Quand on vous demande un indicateur, écrivez sa définition en une phrase AVANT d'écrire le SQL, et faites-la valider. La requête n'est que la traduction de cette phrase — et c'est la phrase qu'on vous reprochera dans six mois, pas la requête."
+    },
+    exercices: ["p5-32", "p5-33", "p5-34"]
+  },
+  {
+    id: "ch-p5-12", niveau: "P5", titre: "Le prix d'hier et celui d'aujourd'hui", duree: "7 min",
+    resume: "Deux colonnes contiennent un prix. Une seule dit ce qui a été encaissé — et l'écart est trop petit pour alerter qui que ce soit.",
+    lecon: {
+      intro: "La boutique stocke le prix à deux endroits : produits.prix, le prix du catalogue AUJOURD'HUI, et lignes_commande.prix_unitaire, le prix qui figurait sur la facture au moment de la vente. Les deux sont utiles, et les confondre produit l'une des erreurs les plus discrètes du métier — parce que l'écart qu'elle crée est trop faible pour éveiller le moindre soupçon.",
+      points: [
+        "Un chiffre d'affaires se calcule TOUJOURS au prix facturé : c'est l'argent réellement encaissé qu'on mesure.",
+        "Le prix actuel sert à simuler — « que rapporteraient ces ventes aux tarifs d'aujourd'hui ? » —, jamais à mesurer le passé.",
+        "Sur cette base, 22 lignes de commande portent un prix différent du prix actuel, toutes antérieures au 1ᵉʳ octobre 2025, date du changement de tarifs.",
+        "L'écart total est de 58,00 € sur 12 387,00 €, soit moins de 0,5 % : rien, dans le résultat, ne peut vous alerter.",
+        "Le symptôme, lui, est caractéristique : un chiffre du PASSÉ qui change alors que le passé n'a pas changé. Si le chiffre d'affaires de 2025 bouge parce qu'on a modifié un tarif ce matin, une colonne du présent s'est glissée dans le calcul.",
+        "Dernier indice : quand on remplace p.prix par l.prix_unitaire, la jointure sur produits devient souvent inutile. Une table jointe sans être utilisée est presque toujours le signe qu'on y a pris une colonne qu'on n'aurait pas dû."
+      ],
+      exemple: {
+        titre: "Facturé 1 249,00 €, affiché 1 299,00 € aujourd'hui",
+        code: "SELECT l.commande_id, p.nom, l.prix_unitaire AS facture, p.prix AS actuel\nFROM lignes_commande l JOIN produits p ON p.id = l.produit_id\nWHERE l.prix_unitaire <> p.prix\nORDER BY l.commande_id\nLIMIT 3;",
+        lignes: [3],
+        resultat: "Les trois premières des 22 lignes dont le prix facturé diffère du prix actuel.",
+        commentaire: "Ces 22 lignes sont toutes antérieures au changement de tarifs. Les recalculer au prix d'aujourd'hui ne produirait aucune erreur, aucun avertissement — juste un chiffre d'affaires légèrement faux, et qui bougerait au prochain changement de prix."
+      },
+      astuce: "Dès qu'une table de référence (produits, tarifs, clients) est jointe à une table d'historique, demandez-vous pour chaque colonne que vous prenez : est-ce la valeur d'ALORS ou celle de MAINTENANT ? L'historique porte presque toujours celle d'alors, et c'est elle qu'il faut."
+    },
+    exercices: ["p5-35", "p5-36"]
+  },
+  {
+    id: "ch-p5-13", niveau: "P5", titre: "« Le panier moyen » et le choix du dénominateur", duree: "7 min",
+    resume: "Une moyenne cache deux décisions : ce qu'on additionne, et ce par quoi on divise. La seconde est celle qu'on oublie.",
+    lecon: {
+      intro: "Une moyenne est un quotient, et un quotient a deux moitiés. Les discussions portent toujours sur la première — ce qu'on additionne — et presque jamais sur la seconde — ce par quoi on divise. C'est pourtant là que se logent les erreurs les plus coûteuses, parce qu'un dénominateur faux déplace la moyenne de peu, et ne se voit jamais sur le résultat.",
+      points: [
+        "Le panier moyen est la moyenne du montant PAR COMMANDE : il faut donc totaliser chaque commande d'abord, faire la moyenne ensuite. Deux agrégations successives, donc une sous-requête.",
+        "Faire AVG directement sur lignes_commande répondrait à « combien vaut une ligne de commande en moyenne » — 142 lignes pour 70 commandes, et une question que personne n'a posée.",
+        "Le périmètre déplace le résultat : 229,39 € sur les 54 commandes ni annulées ni retournées, 231,91 € sur les 70 commandes, 233,69 € en ajoutant les frais de port.",
+        "Les trois nombres sont proches — moins de 2 % d'écart — alors que les populations diffèrent d'un quart. C'est exactement ce qui rend l'erreur de dénominateur invisible sur le seul montant.",
+        "D'où la règle : une moyenne se publie TOUJOURS avec son dénominateur. « 229,39 € sur 54 commandes » est vérifiable ; « 229,39 € » ne l'est pas.",
+        "Rappel du palier 2 : AVG ignore les NULL. La moyenne d'une colonne à trous porte donc sur moins de lignes qu'on ne croit, et là encore, seul le compte le dit."
+      ],
+      exemple: {
+        titre: "Deux moyennes presque identiques, deux populations très différentes",
+        code: "SELECT\n  (SELECT COUNT(*) FROM (SELECT o.id FROM commandes o WHERE o.statut NOT IN ('annulee','retournee'))) AS commandes_valides,\n  (SELECT COUNT(*) FROM commandes) AS commandes_totales,\n  (SELECT ROUND(AVG(t),2) FROM (SELECT SUM(l.quantite*l.prix_unitaire) AS t FROM lignes_commande l JOIN commandes o ON o.id=l.commande_id WHERE o.statut NOT IN ('annulee','retournee') GROUP BY l.commande_id)) AS panier_valides,\n  (SELECT ROUND(AVG(t),2) FROM (SELECT SUM(l.quantite*l.prix_unitaire) AS t FROM lignes_commande l GROUP BY l.commande_id)) AS panier_toutes;",
+        lignes: [1],
+        resultat: "54 et 70 commandes ; 229,39 € et 231,91 €.",
+        commentaire: "Les deux moyennes ne diffèrent que de 2,52 €, soit 1 %. Les deux dénominateurs, eux, diffèrent de 16 commandes, soit presque un quart. Seule la première paire de colonnes aurait permis de s'en apercevoir."
+      },
+      astuce: "Affichez toujours le compte à côté de la moyenne, même quand on ne vous le demande pas. C'est la colonne qui coûte le moins cher à écrire et qui rattrape le plus d'erreurs de périmètre."
+    },
+    exercices: ["p5-37", "p5-38"]
+  },
+  {
+    id: "ch-p5-14", niveau: "P5", titre: "Pourquoi une requête est lente : l'index", duree: "6 min",
+    resume: "Culture générale, sans exercice : ce que la base fait quand elle n'a pas d'index, ce qu'un index change, et ce qu'il coûte.",
+    lecon: {
+      intro: "Sur 289 lignes, toutes vos requêtes sont instantanées. Sur 289 millions, les mêmes requêtes, écrites exactement de la même façon, peuvent mettre plusieurs minutes — ou quelques millisecondes. La différence tient à une chose que vous ne voyez jamais : la présence ou l'absence d'un INDEX. Ce chapitre n'a pas d'exercice ; il est là pour que le jour où une requête sera lente, vous sachiez quoi regarder.",
+      points: [
+        "Sans index, pour répondre à WHERE statut = 'livree', la base lit TOUTES les lignes de la table et garde celles qui correspondent. C'est un balayage complet, et son coût grandit proportionnellement à la taille de la table.",
+        "Un index est une structure de données triée, tenue à jour par la base, qui lui permet d'aller directement aux lignes voulues — comme l'index d'un livre évite de lire les 600 pages pour trouver un mot.",
+        "EXPLAIN QUERY PLAN devant une requête montre ce que la base a décidé de faire. « SCAN commandes » signifie qu'elle lit tout ; « SEARCH … USING INDEX … » qu'elle utilise un index.",
+        "Vous avez déjà des index sans le savoir : une CLÉ PRIMAIRE en est un. C'est pourquoi WHERE id = 101 est instantané sur n'importe quelle taille de table, alors que WHERE nom = 'Clavier sans fil' ne l'est pas.",
+        "Un index se crée avec CREATE INDEX nom_index ON table (colonne). Il se pose sur les colonnes qui servent à FILTRER (WHERE), à JOINDRE (ON) et à TRIER (ORDER BY).",
+        "Un index n'est jamais gratuit : il occupe de la place, et il doit être mis à jour à chaque INSERT, UPDATE ou DELETE. Indexer toutes les colonnes ralentirait l'écriture sans accélérer grand-chose.",
+        "Un index ne change JAMAIS le résultat d'une requête, seulement le temps qu'elle met. Si ajouter un index change vos chiffres, c'est que vos chiffres étaient déjà faux."
+      ],
+      exemple: {
+        titre: "Ce que la base a décidé de faire",
+        code: "EXPLAIN QUERY PLAN SELECT id FROM commandes WHERE statut = 'livree';",
+        lignes: [1],
+        resultat: "« SCAN commandes » : la base lit les 70 lignes une par une.",
+        commentaire: "Essayez maintenant EXPLAIN QUERY PLAN SELECT nom FROM produits WHERE id = 101 : le plan devient « SEARCH produits USING INTEGER PRIMARY KEY », parce que la clé primaire EST un index. Même base, même forme de requête, deux stratégies totalement différentes."
+      },
+      astuce: "Devant une requête lente, le premier geste n'est jamais de la réécrire : c'est de lui mettre EXPLAIN QUERY PLAN devant. La base vous dit elle-même si elle balaie une table entière, et laquelle."
+    },
+    exercices: []
+  },
+  {
+    id: "ch-p5-15", niveau: "P5", titre: "Écrire dans une base : INSERT, UPDATE, DELETE", duree: "6 min",
+    resume: "Culture générale, sans exercice : un analyste lit, il n'écrit presque jamais. Voici pourquoi, et ce qu'il faut savoir le jour où ça arrive.",
+    lecon: {
+      intro: "Tout ce cours porte sur la lecture, et ce n'est pas un hasard : le métier d'analyste consiste à interroger des données dont quelqu'un d'autre est responsable. Vous aurez très probablement un accès en LECTURE SEULE, et c'est une bonne nouvelle. Ce chapitre explique les trois instructions d'écriture pour que vous sachiez les lire dans le code d'un collègue — et pour que vous mesuriez le risque le jour où vous en taperez une.",
+      points: [
+        "INSERT INTO table (colonnes) VALUES (…) ajoute des lignes. C'est l'instruction la moins dangereuse : au pire, on supprime ce qu'on vient d'ajouter.",
+        "UPDATE table SET colonne = valeur WHERE … modifie les lignes existantes. DELETE FROM table WHERE … les supprime.",
+        "Le WHERE n'est pas obligatoire, et c'est là tout le danger : UPDATE produits SET prix = 0 sans WHERE met TOUS les prix à zéro, DELETE FROM commandes sans WHERE vide la table entière. Aucune confirmation, aucun avertissement.",
+        "D'où le réflexe universel : écrivez d'abord votre WHERE dans un SELECT. Si SELECT * FROM produits WHERE … renvoie les 12 lignes que vous vouliez, alors seulement remplacez SELECT * par UPDATE … SET.",
+        "Une écriture est définitive dès qu'elle est validée. En dehors d'une transaction explicite (BEGIN … ROLLBACK), il n'y a pas d'annulation : seule une sauvegarde permet de revenir en arrière.",
+        "Les contraintes que vous avez vues au premier chapitre de ce palier — clés étrangères, CHECK, NOT NULL — sont justement ce qui protège une base en écriture. C'est leur absence qui a produit l'export brut.",
+        "Dans Requêt'R, vous pouvez tout essayer : la base est reconstruite à chaque exercice, et le bouton « Réinitialiser la base » la remet à neuf en quelques millisecondes."
+      ],
+      exemple: {
+        titre: "Compter avant d'écrire",
+        code: "SELECT COUNT(*) AS lignes_qui_seraient_touchees FROM produits WHERE stock = 0;",
+        lignes: [1],
+        resultat: "1 ligne : un seul produit est en rupture de stock.",
+        commentaire: "C'est exactement le réflexe à prendre : ce COUNT dit qu'un UPDATE produits SET stock = 10 WHERE stock = 0 toucherait UNE ligne. Sans le WHERE, il en toucherait 30 — et le même SELECT, sans WHERE, vous l'aurait dit avant."
+      },
+      astuce: "Toute instruction d'écriture s'écrit en deux temps : d'abord le SELECT qui montre les lignes visées, puis l'écriture qui reprend le même WHERE mot pour mot. Les professionnels qui ne font jamais cette erreur sont ceux qui n'ont jamais sauté cette étape."
+    },
+    exercices: []
+  },
+  {
+    id: "ch-p5-16", niveau: "P5", titre: "Bonus : la chaîne de parrainage, par CTE récursive", duree: "6 min",
+    resume: "Culture générale, sans exercice et jamais exigé : comment une requête peut suivre une chaîne dont on ignore la longueur.",
+    lecon: {
+      intro: "Ce chapitre est un bonus. Il n'est pas exigé, aucun exercice ne le reprend, et vous pouvez devenir un très bon analyste sans jamais l'écrire. Il est là parce qu'il répond à une question qui, autrement, semble impossible en SQL : comment suivre une chaîne — un parrain qui a parrainé quelqu'un qui a parrainé quelqu'un d'autre — quand on ne sait pas à l'avance combien de maillons elle compte ?",
+      points: [
+        "Avec une jointure, on remonte un niveau. Avec deux auto-jointures, deux niveaux. Mais si la chaîne peut avoir trois, quatre ou dix maillons, aucun nombre fixe de jointures ne convient.",
+        "WITH RECURSIVE résout cela en deux parties séparées par UNION ALL : un point de DÉPART (le premier maillon), puis une règle qui dit comment passer d'un maillon au suivant.",
+        "La seconde partie fait référence à la CTE elle-même : c'est ce qui la rend récursive. SQLite applique la règle encore et encore, jusqu'à ce qu'elle ne ramène plus rien.",
+        "Le compteur de niveau (chaine.niveau + 1) n'est pas obligatoire, mais il rend le résultat lisible et permet de repérer une chaîne anormalement longue.",
+        "Danger classique : si les données contiennent un cycle — A parraine B qui parraine A —, la récursion ne s'arrête jamais. Sur des données dont vous n'êtes pas sûr, ajoutez toujours une borne de profondeur (WHERE niveau < 10).",
+        "C'est la seule construction de ce cours qu'on peut raisonnablement remplacer par du code dans un autre langage. Si vous ne la retenez pas, retenez au moins qu'elle existe, et le mot pour la chercher."
+      ],
+      exemple: {
+        titre: "Quatre générations de parrainage",
+        code: "WITH RECURSIVE chaine(id, prenom, niveau) AS (\n  SELECT id, prenom, 1 FROM clients WHERE id = 201\n  UNION ALL\n  SELECT c.id, c.prenom, chaine.niveau + 1\n  FROM clients c JOIN chaine ON c.parrain_id = chaine.id\n)\nSELECT * FROM chaine ORDER BY niveau;",
+        lignes: [4],
+        resultat: "4 lignes : le client 201, puis celui qu'il a parrainé, puis le filleul de celui-ci, et ainsi de suite jusqu'au 4ᵉ niveau.",
+        commentaire: "La première partie pose le point de départ, la seconde dit « et pour chaque personne déjà trouvée, ajoute ceux qu'elle a parrainés ». SQLite répète jusqu'à ne plus rien trouver — ici, quatre fois."
+      },
+      astuce: "Les CTE récursives servent partout où les données forment une hiérarchie : un organigramme, des catégories et sous-catégories, un fil de discussion, une nomenclature de pièces. Le jour où vous en croiserez une, vous saurez quoi chercher."
+    },
+    exercices: []
   }
 ];
 
@@ -3495,7 +4615,7 @@ const PALIERS = [
   { id: "P2", titre: "Agréger", termine: true },
   { id: "P3", titre: "Croiser", termine: true },
   { id: "P4", titre: "Raisonner", termine: true },
-  { id: "P5", titre: "Métier", termine: false }
+  { id: "P5", titre: "Métier", termine: true }
 ];
 
 /* Clauses SQL : structure du futur lexique (lot 4). Le niveau « Clause » des indices en est tiré, comme le niveau « Fonction »
@@ -3533,7 +4653,20 @@ const CLAUSES = {
   "RANK": { syntaxe: "RANK() OVER (ORDER BY …)", aide: "donne le même rang à des valeurs égales, puis saute les rangs consommés par cette égalité (1, 2, 2, 4…)" },
   "DENSE_RANK": { syntaxe: "DENSE_RANK() OVER (ORDER BY …)", aide: "donne le même rang à des valeurs égales, mais ne saute jamais de rang (1, 2, 2, 3…) : le rang suivant compte les valeurs distinctes déjà vues, pas les lignes" },
   "LAG": { syntaxe: "LAG(colonne) OVER (ORDER BY …)", aide: "ramène la valeur de la ligne précédente DU RÉSULTAT, pas de la période précédente du calendrier : une période absente du résultat ne compte pas comme une ligne à comparer" },
-  "julianday": { syntaxe: "julianday(date1) - julianday(date2)", aide: "convertit une date en nombre de jours depuis une origine fixe ; la différence de deux julianday donne directement un nombre de jours entre deux dates" }
+  "julianday": { syntaxe: "julianday(date1) - julianday(date2)", aide: "convertit une date en nombre de jours depuis une origine fixe ; la différence de deux julianday donne directement un nombre de jours entre deux dates" },
+  /* Palier 5 (lot 10) : nettoyage d'un export brut et opérateurs d'ensemble. */
+  "TRIM": { syntaxe: "TRIM(colonne)", aide: "retire les espaces au début et à la fin d'un texte ; LTRIM et RTRIM n'en retirent qu'un côté" },
+  "UPPER": { syntaxe: "UPPER(colonne)", aide: "met un texte en majuscules ; avec TRIM, donne la forme normalisée sur laquelle on regroupe et on joint" },
+  "LOWER": { syntaxe: "LOWER(colonne)", aide: "met un texte en minuscules ; sert à comparer deux valeurs qui ne diffèrent que par la casse" },
+  "CAST": { syntaxe: "CAST(valeur AS INTEGER)", aide: "convertit explicitement une valeur vers un type (INTEGER, REAL, TEXT) ; à faire APRÈS avoir réparé le texte" },
+  "REPLACE": { syntaxe: "REPLACE(texte, ancien, nouveau)", aide: "remplace toutes les occurrences d'un morceau de texte par un autre ; répare un séparateur de milliers ou une virgule décimale" },
+  "substr": { syntaxe: "substr(texte, depart, longueur)", aide: "extrait un morceau d'un texte à partir d'une position (le premier caractère est en position 1)" },
+  "date": { syntaxe: "date(valeur)", aide: "lit une date au format AAAA-MM-JJ et la renvoie ; renvoie NULL si elle ne sait pas la lire, et ne vérifie pas que le jour existe" },
+  "UNION ALL": { syntaxe: "SELECT … UNION ALL SELECT …", aide: "empile les lignes de deux résultats sans rien examiner : le total est toujours la somme des deux" },
+  "UNION": { syntaxe: "SELECT … UNION SELECT …", aide: "empile deux résultats puis retire les lignes STRICTEMENT identiques ; une seule valeur qui diffère suffit à garder les deux" },
+  "INTERSECT": { syntaxe: "SELECT … INTERSECT SELECT …", aide: "garde seulement les lignes présentes dans les deux résultats" },
+  "EXCEPT": { syntaxe: "SELECT … EXCEPT SELECT …", aide: "garde les lignes du premier résultat qui ne sont pas dans le second" },
+  "CREATE TABLE": { syntaxe: "CREATE TABLE table (colonne TYPE contrainte, …)", aide: "crée une table et déclare ses contraintes ; une base ne refuse que ce qui a été déclaré ici" }
 };
 
 /* Vocabulaire du Lexique (lot 6) : les mots qu'il faut comprendre avant de lire CLAUSES. Le chapitre 0 les
@@ -3547,7 +4680,12 @@ const VOCABULAIRE = {
   "NULL": "L'absence de valeur : ni zéro, ni texte vide, ni un mot. Se teste avec IS NULL ou IS NOT NULL, jamais avec =.",
   "doublon": "Deux lignes identiques dans un résultat. DISTINCT les retire ; sans lui, elles sont toutes comptées.",
   "requête": "Une instruction écrite en SQL qui décrit le résultat voulu (quelles colonnes, quelles lignes, dans quel ordre…), sans dire comment l'obtenir : c'est SQLite qui s'en charge.",
-  "résultat": "Le tableau que renvoie une requête : des colonnes, et une ligne par enregistrement qui correspond à la demande."
+  "résultat": "Le tableau que renvoie une requête : des colonnes, et une ligne par enregistrement qui correspond à la demande.",
+  "export brut": "Un fichier de données produit par un autre système, tel qu'il sort, sans nettoyage : sans clé, sans contrainte, souvent avec toutes les colonnes en texte. C'est ce qu'on reçoit en entreprise, et le nettoyage vient avant l'analyse.",
+  "valeur manquante": "Une information absente. Dans une base propre, elle s'écrit NULL ; dans un export, elle s'écrit aussi « », « N/A », « -- » ou « inconnu » — et ces trois-là sont du texte, que IS NULL ne trouve pas.",
+  "normaliser": "Ramener une valeur à une forme unique avant de la comparer, de la regrouper ou de la joindre : UPPER(TRIM(colonne)) pour un texte, un CAST pour un nombre stocké en texte.",
+  "donnée aberrante": "Une valeur impossible plutôt qu'improbable : un montant négatif, une livraison antérieure à la commande, une date qui n'existe pas. Elle se cherche par des contrôles de cohérence, pas par une moyenne.",
+  "index": "Une structure triée que la base tient à jour pour retrouver des lignes sans lire toute la table. Il change le TEMPS d'une requête, jamais son résultat ; une clé primaire en est un."
 };
 
 /* Fiches de clause (remplace les fiches de fonction Excel de Classe'R, DECISIONS.md « Remplacé »), ouvertes
@@ -3787,6 +4925,91 @@ const FICHES = {
     contexte: "Indispensable pour tout calcul de délai : julianday(date_livraison) - julianday(date_commande) donne directement le nombre de jours entre les deux.",
     erreur: "Soustraire deux dates écrites en texte sans passer par julianday : SQLite compare alors du texte sans en faire une opération numérique correcte, ou renvoie une erreur selon l'opération tentée.",
     voirAussi: ["strftime"],
+    entrainements: []
+  },
+  /* Palier 5 (lot 10) : le nettoyage d'un export brut et les opérateurs d'ensemble. */
+  "TRIM": {
+    but: "Retirer les espaces qui entourent un texte, pour que deux valeurs qui ne diffèrent que par là cessent d'être considérées comme différentes.",
+    contexte: "Sur toute colonne de texte venue d'un export : avant de regrouper, de comparer à une liste, ou de joindre deux fichiers sur une clé. Un espace de début ou de fin ne se voit sur AUCUN affichage — il ne se trouve qu'en l'interrogeant, par exemple avec WHERE colonne <> TRIM(colonne).",
+    erreur: "Normaliser un seul côté d'une jointure : TRIM(a.id) = b.id ne rapproche rien si c'est b.id qui porte l'espace. Les deux côtés se normalisent toujours ensemble.",
+    voirAussi: ["UPPER", "LOWER", "REPLACE"],
+    entrainements: []
+  },
+  "UPPER": {
+    but: "Mettre un texte en majuscules, pour ramener « Lyon », « LYON » et « lyon » à une seule et même valeur.",
+    contexte: "Dans un GROUP BY, un ON ou une comparaison portant sur du texte saisi à la main. UPPER(TRIM(colonne)) est la forme normalisée standard : c'est sur elle qu'on regroupe, jamais sur la colonne brute.",
+    erreur: "Croire que la normalisation règle aussi les valeurs manquantes : « N/A » mis en majuscules reste « N/A », et comptera comme une ville tant qu'on ne l'aura pas écarté. Attention aussi aux lettres accentuées, que UPPER ne traite pas dans SQLite.",
+    voirAussi: ["TRIM", "LOWER", "GROUP BY"],
+    entrainements: []
+  },
+  "LOWER": {
+    but: "Mettre un texte en minuscules, en général pour comparer deux valeurs qui ne diffèrent que par la casse.",
+    contexte: "Sur les adresses électroniques, les codes, les identifiants : LOWER(TRIM(email)) est la forme sur laquelle on cherche les doublons, parce que deux adresses de casses différentes désignent la même boîte.",
+    erreur: "Chercher des doublons sur la colonne brute : les deux lignes à trouver sont justement celles qui s'écrivent différemment.",
+    voirAussi: ["UPPER", "TRIM", "HAVING"],
+    entrainements: []
+  },
+  "CAST": {
+    but: "Convertir explicitement une valeur vers un type : CAST(colonne AS INTEGER) ou AS REAL pour une colonne de nombres stockée en texte.",
+    contexte: "Dès qu'une colonne TEXT contient des nombres. Sans conversion, les comparaisons se font dans l'ordre du dictionnaire (« 9 » y est plus grand que « 100 ») et les sommes convertissent en silence, en abandonnant ce qu'elles ne savent pas lire.",
+    erreur: "Convertir avant d'avoir réparé : CAST('1 200' AS INTEGER) vaut 1, parce que la lecture s'arrête à l'espace. REPLACE d'abord, CAST ensuite.",
+    voirAussi: ["REPLACE", "SUM", "ORDER BY"],
+    entrainements: []
+  },
+  "REPLACE": {
+    but: "Remplacer toutes les occurrences d'un morceau de texte par un autre — pour retirer un séparateur de milliers, ou changer une virgule décimale en point.",
+    contexte: "Juste avant un CAST, sur une colonne de nombres en texte : CAST(REPLACE(REPLACE(montant, ' ', ''), ',', '.') AS REAL) répare les deux formes d'un coup.",
+    erreur: "Oublier que REPLACE remplace TOUTES les occurrences : retirer les espaces d'un nom de ville collerait ses mots.",
+    voirAussi: ["CAST", "TRIM", "substr"],
+    entrainements: []
+  },
+  "substr": {
+    but: "Extraire un morceau d'un texte à partir d'une position donnée, pour en remettre les parties dans un autre ordre.",
+    contexte: "Pour reconstruire une date au format AAAA-MM-JJ à partir d'un jj/mm/aaaa : substr(d,7,4) || '-' || substr(d,4,2) || '-' || substr(d,1,2). Le premier caractère est en position 1, pas 0.",
+    erreur: "Croire qu'une date reconstruite est une date valide : substr déplace des caractères, il ne vérifie rien. « 31/02/2025 » devient « 2025-02-31 », que date() décale ensuite silencieusement au 3 mars.",
+    voirAussi: ["date", "REPLACE"],
+    entrainements: []
+  },
+  "date": {
+    but: "Lire une date écrite au format AAAA-MM-JJ et la renvoyer — et, par là même, dire si la valeur est lisible ou non.",
+    contexte: "WHERE date(colonne) IS NULL recense les lignes inexploitables d'une colonne de dates : c'est le premier contrôle à passer sur tout export, avant tout calcul de délai ou tout regroupement par mois.",
+    erreur: "Prendre date() pour un validateur : il n'accepte qu'un format, mais il ne vérifie pas que le jour existe. date('2025-02-31') ne renvoie pas NULL, il renvoie '2025-03-03'.",
+    voirAussi: ["strftime", "julianday", "substr"],
+    entrainements: []
+  },
+  "UNION ALL": {
+    but: "Empiler les lignes de deux résultats, sans rien examiner : le total est toujours la somme exacte des deux.",
+    contexte: "Pour rassembler des fichiers découpés par période ou par filiale, et pour mettre côte à côte plusieurs résultats d'une ligne (un comptage par table, par exemple). Les deux parties doivent avoir le même nombre de colonnes, dans le même ordre.",
+    erreur: "L'utiliser quand les sources se recouvrent : les lignes communes sont alors comptées deux fois, et aucun message ne le signale.",
+    voirAussi: ["UNION", "INTERSECT", "EXCEPT"],
+    entrainements: []
+  },
+  "UNION": {
+    but: "Empiler deux résultats puis retirer les lignes en double.",
+    contexte: "Quand deux sources peuvent se recouvrir et qu'on veut une liste sans répétition.",
+    erreur: "Compter sur lui pour dédoublonner des données sales : il ne retire que les lignes STRICTEMENT identiques, colonne par colonne. Un espace final sur une seule valeur suffit à lui faire garder les deux. On normalise AVANT d'empiler, et on repasse un contrôle de doublon après.",
+    voirAussi: ["UNION ALL", "DISTINCT", "TRIM"],
+    entrainements: []
+  },
+  "INTERSECT": {
+    but: "Garder seulement les lignes présentes dans les DEUX résultats.",
+    contexte: "Pour comparer deux populations : les clients qui ont commandé en 2025 et aussi en 2026, les produits présents dans deux catalogues.",
+    erreur: "Confondre avec une jointure : INTERSECT compare des lignes entières entre deux résultats de même structure, il ne rapproche pas deux tables par une clé.",
+    voirAussi: ["UNION", "EXCEPT"],
+    entrainements: []
+  },
+  "EXCEPT": {
+    but: "Garder les lignes du premier résultat qui ne sont pas dans le second.",
+    contexte: "Pour les questions en creux : les clients de l'an dernier qui ne sont pas revenus, les produits jamais commandés, les lignes d'un fichier absentes de l'autre.",
+    erreur: "Inverser l'ordre des deux parties : contrairement à UNION et INTERSECT, EXCEPT n'est pas symétrique, et A EXCEPT B ne répond pas à la même question que B EXCEPT A.",
+    voirAussi: ["UNION", "INTERSECT", "NOT IN"],
+    entrainements: []
+  },
+  "CREATE TABLE": {
+    but: "Créer une table en déclarant ses colonnes, leurs types et leurs contraintes.",
+    contexte: "Hors programme pour un analyste, qui lit bien plus qu'il n'écrit — mais c'est ici que se décide tout ce qu'une base refusera : clé primaire, clé étrangère, NOT NULL, CHECK. Lire le CREATE TABLE d'une table (bouton « Voir l'instruction CREATE TABLE » du Schéma) dit en quelques lignes ce qui est garanti, et ce qui ne l'est pas.",
+    erreur: "Supposer qu'une base protège ses données par nature : elle ne refuse que ce qu'on lui a demandé de refuser. Un export sans aucune contrainte accepte un identifiant en double, un statut inexistant et un montant négatif sans broncher.",
+    voirAussi: ["IS NULL"],
     entrainements: []
   }
 };

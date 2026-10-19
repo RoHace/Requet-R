@@ -278,8 +278,23 @@ const Explorateur = (() => {
   let voile = null, btn = null;
   const cible = (table, colonne) => colonne ? `${table}.${colonne}` : table;
 
+  /** Documentation du jeu de données actuellement chargé dans la base vivante (D068). */
+  function docDuJeu() {
+    const jeux = CONTENU.jeux || {};
+    return jeux[Moteur.etat.jeu] || CONTENU.base || {};
+  }
+
+  /** Le segment « Boutique / Export brut » n'est offert que HORS exercice : pendant un exercice, changer la base
+   *  d'« Exécuter » sans changer celle de « Vérifier » (base jetable, seed de l'exercice, D032) recréerait
+   *  l'ambiguïté que le lot 3 avait supprimée. L'exercice désigne son jeu ; le bac à sable sert à explorer. */
+  function horsExercice() {
+    if (typeof Parcours !== "undefined" && Parcours && Parcours.courant) return false;
+    if (typeof Session !== "undefined" && Session && Session.courante) return false;
+    return !/^#\/exercice\//.test(location.hash);
+  }
+
   function detailTable(t, tables, choisir) {
-    const doc = (CONTENU.base && CONTENU.base.tables && CONTENU.base.tables[t.nom]) || {};
+    const doc = (docDuJeu().tables && docDuJeu().tables[t.nom]) || {};
     const cle = t.colonnes.filter(c => c.pk).sort((a, b) => a.pk - b.pk).map(c => c.nom);
     const fk = Object.fromEntries(t.cles.map(c => [c.de, c]));
     const refs = tables.flatMap(o => o.cles.filter(c => c.table === t.nom).map(c => ({ table: o.nom, colonne: c.de })));
@@ -362,30 +377,46 @@ const Explorateur = (() => {
 
       const relations = tables.flatMap(t => t.cles.map(c => ({ de: t.nom, colonne: c.de, vers: c.table, cible: c.vers })));
       corps.append(
-        el("h3.schema-sous", {}, "Carte des relations"),
-        el("p.muet.schema-lecture", {}, "Une clé étrangère est une colonne qui contient l'identifiant d'une ligne d'une autre table : c'est ainsi que les tables se relient. Sur la carte, « 1 » marque la table pointée (une seule ligne) et « N » la table qui pointe (plusieurs lignes possibles). Cliquez une table pour voir son détail."),
+        el("h3.schema-sous", {}, relations.length ? "Carte des relations" : "Les fichiers"),
+        /* Sans aucune clé étrangère (un export brut, D068), la leçon sur « 1 » et « N » n'a rien à désigner :
+           on dit à la place ce que l'absence de relation signifie. */
+        el("p.muet.schema-lecture", {}, relations.length
+          ? "Une clé étrangère est une colonne qui contient l'identifiant d'une ligne d'une autre table : c'est ainsi que les tables se relient. Sur la carte, « 1 » marque la table pointée (une seule ligne) et « N » la table qui pointe (plusieurs lignes possibles). Cliquez une table pour voir son détail."
+          : "Aucune clé étrangère n'est déclarée : rien, dans la base, ne dit comment ces fichiers se rattachent les uns aux autres. C'est à la requête de le faire, et rien ne la préviendra si elle se trompe de colonne. Cliquez un fichier pour voir son détail."),
         carte,
         relations.length
           ? el("ul.schema-rel", {}, relations.map(r => el("li", {},
               el("span.mono", {}, `${r.de}.${r.colonne} → ${cible(r.vers, r.cible)}`),
               r.de === r.vers ? el("span.tres-muet", {}, " — la table se réfère à elle-même") : null)))
-          : el("p.muet", {}, "Aucune clé étrangère : ces tables ne sont pas reliées entre elles."),
-        el("h3.schema-sous", {}, "Les tables"),
+          : null,
+        el("h3.schema-sous", {}, relations.length ? "Les tables" : "Le détail de chaque fichier"),
         onglets, zone);
       choisir(tables[0].nom);
       // focus sur l'onglet actif, sans faire défiler : la carte (en haut) doit rester visible à l'ouverture
       setTimeout(() => { const actif = onglets.querySelector('[aria-pressed="true"]'); if (actif) actif.focus({ preventScroll: true }); }, 60);
     }
 
-    const base = CONTENU.base || {};
+    const base = docDuJeu();
+    const jeuActuel = JEUX.find(j => j.id === Moteur.etat.jeu) || null;
+    /* Bascule entre les deux jeux : la base vivante est reconstruite, puis le panneau rouvert sur elle. */
+    const bascule = horsExercice() && JEUX.length > 1
+      ? el("div.segment", { role: "group", "aria-label": "Jeu de données" },
+          JEUX.map(j => el("button", {
+            type: "button", "aria-pressed": String(j.id === Moteur.etat.jeu), title: j.desc,
+            onclick: () => { if (j.id !== Moteur.etat.jeu) { nouvelleBase(j.seed()); API.fermer(); API.ouvrir(); } }
+          }, j.nom)))
+      : null;
     const boite = el("div.lexique.lexique--large", { role: "dialog", "aria-modal": "true", "aria-label": "Schéma de la base" },
       el("div.lexique__tete", {},
         el("h2", {}, "Schéma de la base"),
         el("span.tres-muet", { style: "font-size:13px" }, `${tables.length} table${tables.length > 1 ? "s" : ""}`),
         el("button.btn.btn--nu", { type: "button", onclick: () => API.fermer(), "aria-label": "Fermer le schéma" }, "✕")),
+      bascule,
+      bascule && base.resume ? el("p.muet.schema-lecture", {}, base.resume) : null,
       corps,
       el("p.tres-muet.lexique__pied", {},
         base.dateReferenceTexte ? `Date de référence : ${base.dateReferenceTexte}. C'est « aujourd'hui » dans tous les exercices. ` : "",
+        jeuActuel && !bascule ? `Jeu de données affiché : ${jeuActuel.nom}. ` : "",
         "Cette fenêtre montre la base telle qu'elle est maintenant."));
     voile = el("div.voile.voile--lexique", { onclick: ev => { if (ev.target === voile) API.fermer(); } }, boite);
     document.body.append(voile);
@@ -650,7 +681,9 @@ function pageBacASable() {
         el("span.tres-muet", { style: "font-size:12.5px" }, "Ctrl + Entrée"),
         el("span.sql-barre__espace"),
         el("button.btn", { type: "button", onclick: () => {
-          const ms = nouvelleBase(); sortie.replaceChildren(); majEtat();
+          /* Reconstruit le jeu ACTUELLEMENT chargé (D068) : au bac à sable, on peut avoir basculé sur l'export
+             brut depuis le panneau « Schéma » — « Réinitialiser » ne doit pas ramener la boutique en traître. */
+          const ms = nouvelleBase(seedDe({ jeu: Moteur.etat.jeu })); sortie.replaceChildren(); majEtat();
           Toast.afficher(`Base reconstruite en ${ms} ms.`, "accent");
         } }, "Réinitialiser la base")),
       el("div.sql-exemples", {},

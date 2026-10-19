@@ -252,7 +252,14 @@ const Parcours = {
     const faits = liste.filter(ex => (Store.etat.exercices[ex.id] || {}).reussites > 0).length;
     return { faits, total: liste.length, part: liste.length ? faits / liste.length : 0 };
   },
-  termine(ch) { const a = Parcours.avancement(ch); return a.total > 0 && a.faits === a.total; },
+  /* Un chapitre qui porte des exercices est terminé quand ils sont tous réussis. Un chapitre de culture générale
+     n'en a aucun (l'index, l'écriture, la CTE récursive du palier 5) : il est terminé dès que sa leçon a été
+     ouverte, sinon il resterait « en cours » pour toujours et « Reprendre » n'avancerait plus (arbitrage A). */
+  termine(ch) {
+    const a = Parcours.avancement(ch);
+    if (a.total > 0) return a.faits === a.total;
+    return !!(Store.etat.chapitres[ch.id] || {}).leconVue;
+  },
   suivantConseille() { return CHAPITRES.find(c => !Parcours.termine(c)) || null; },
   ouvrir(id) {
     const ch = Parcours.chapitre(id);
@@ -563,6 +570,10 @@ function ecranChoix(rafraichir) {
  *  seuls le libellé du bouton de sortie et les trois callbacks diffèrent (`ctrl`). */
 function rendreQuestion(etat, ctrl, rafraichir) {
   const ex = etat.liste[etat.index];
+  /* La base vivante doit porter le jeu de données de l'exercice, sinon « Exécuter » travaillerait sur l'autre jeu
+     (D068). On ne reconstruit que si le jeu change : une série libre sur la boutique garde la base telle quelle,
+     exactement comme avant ce lot. */
+  if (Moteur.etat.jeu !== jeuDe(ex)) nouvelleBase(seedDe(ex));
   const zoneRetour = el("div", { id: "zone-retour" });
   const zoneEssaiConteneur = el("div");
   const suite = el("div.exo__pied", {});
@@ -765,15 +776,15 @@ function ecranListeChapitres(rafraichir) {
         : el("p.muet", { style: "font-size:13.5px;margin-top:12px" }, "Tous les chapitres sont terminés. Les exercices et les missions vous attendent pour approfondir.")) : null,
     CHAPITRES.length
       ? el("div.pile", { style: "margin-top:16px" }, CHAPITRES.map((ch, i) => {
-          const a = Parcours.avancement(ch), fini = a.total > 0 && a.faits === a.total;
+          const a = Parcours.avancement(ch), fini = Parcours.termine(ch);
           return el("button.carte.chapitre" + (fini ? ".chapitre--fini" : ""), { type: "button", onclick: () => { Parcours.ouvrir(ch.id); rafraichir(); } },
             el("div.chapitre__tete", {},
               el("span.chapitre__num", {}, String(i + 1).padStart(2, "0")),
               el("div", { style: "flex:1" }, el("h3", {}, ch.titre), el("p.chapitre__resume", {}, ch.resume)),
               fini ? el("span.chapitre__coche", {}, "✓") : null),
             el("div.chapitre__pied", {},
-              el("span.tres-muet", {}, `${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""} · ${ch.duree}`),
-              el("span.tres-muet.mono", {}, `${a.faits}/${a.total}`)));
+              el("span.tres-muet", {}, a.total ? `${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""} · ${ch.duree}` : `Lecture · ${ch.duree}`),
+              a.total ? el("span.tres-muet.mono", {}, `${a.faits}/${a.total}`) : null));
         }))
       : el("div.vide", {}, el("div.vide__boite", {},
           el("h3", {}, "Aucune leçon pour l'instant"),
@@ -784,6 +795,11 @@ function ecranListeChapitres(rafraichir) {
  *  D050), une astuce, puis le bouton qui lance les exercices du chapitre. */
 function ecranLecon(ch, rafraichir) {
   const l = ch.lecon;
+  /* Même règle que pour un exercice : l'exemple « testable » doit s'exécuter sur le jeu du chapitre (D068). */
+  if (Moteur.etat.jeu !== jeuDe(ch)) nouvelleBase(seedDe(ch));
+  /* Une leçon sans exercice ne pourrait jamais être « terminée » (Parcours.termine exige des exercices réussis) :
+     l'avoir ouverte suffit (arbitrage A du lot 10). Les chapitres qui ont des exercices ne s'en servent pas. */
+  if (!ch.exercices.length) Store.modifier(e => { e.chapitres[ch.id] = { ...(e.chapitres[ch.id] || {}), leconVue: true }; });
   const zoneTest = el("div.resultat", { "aria-live": "polite" });
   return el("div", {},
     el("header.entete", {}, el("div.entete__sur", {}, `Palier ${ch.niveau}`), el("h1", {}, ch.titre)),
@@ -801,9 +817,15 @@ function ecranLecon(ch, rafraichir) {
         zoneTest),
       l.astuce ? el("div.lecon__astuce", {}, el("b", {}, "Astuce. "), l.astuce) : null),
     el("div", { style: "margin-top:20px;display:flex;gap:10px;flex-wrap:wrap" },
-      el("button.btn.btn--fort", { type: "button", onclick: () => { Parcours.commencer(); rafraichir(); } },
-        ch.exercices.length ? `À vous — ${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""}` : "Aucun exercice pour l'instant"),
-      el("button.btn.btn--nu", { type: "button", onclick: () => { Parcours.quitter(); rafraichir(); } }, "Quitter le chapitre")));
+      /* Un chapitre de culture générale n'a pas d'exercice : le bouton d'entrée en série n'aurait rien à ouvrir
+         (Parcours.commencer sort aussitôt). Il est remplacé par le retour, et la leçon est déjà marquée lue. */
+      ch.exercices.length
+        ? el("button.btn.btn--fort", { type: "button", onclick: () => { Parcours.commencer(); rafraichir(); } },
+            `À vous — ${ch.exercices.length} exercice${ch.exercices.length > 1 ? "s" : ""}`)
+        : el("button.btn.btn--fort", { type: "button", onclick: () => { Parcours.quitter(); rafraichir(); } }, "Retour au sommaire"),
+      ch.exercices.length
+        ? el("button.btn.btn--nu", { type: "button", onclick: () => { Parcours.quitter(); rafraichir(); } }, "Quitter le chapitre")
+        : null));
 }
 
 /** Bilan de fin de chapitre, sur le modèle de Classe'R (bilanChapitre) : plus sobre que le bilan de série libre
@@ -968,7 +990,7 @@ function etatEnCours(ex) {
 }
 
 function pageExercice(ex) {
-  nouvelleBase();
+  nouvelleBase(seedDe(ex));
   const e = etatEnCours(ex);
   const type = TYPES_EXERCICE[ex.type];
   const rappels = [];

@@ -33,10 +33,11 @@ function charger(fichiers, exports) {
 globalThis.initSqlJs = require("./vendor/sql-wasm.js");
 globalThis.WASM_B64 = readFileSync(join(RACINE, "vendor", "sql-wasm.wasm")).toString("base64");
 globalThis.SEED_SQL = source("seed.sql");
+globalThis.SEED_SALE_SQL = source("seed-sale.sql");          // le second jeu de données du palier 5 (D027, D068)
 
-const { Comparateur, Moteur, nouvelleBase, CONTENU, CLAUSES, TYPES_EXERCICE, Indices, PALIERS, CHAPITRES } = charger(
+const { Comparateur, Moteur, nouvelleBase, seedDe, jeuDe, JEUX, CONTENU, CLAUSES, TYPES_EXERCICE, Indices, PALIERS, CHAPITRES } = charger(
   ["comparateur.js", "moteur.js", "contenu.js", "exercices.js"],
-  ["Comparateur", "Moteur", "nouvelleBase", "CONTENU", "CLAUSES", "TYPES_EXERCICE", "Indices", "PALIERS", "CHAPITRES"]
+  ["Comparateur", "Moteur", "nouvelleBase", "seedDe", "jeuDe", "JEUX", "CONTENU", "CLAUSES", "TYPES_EXERCICE", "Indices", "PALIERS", "CHAPITRES"]
 );
 await Moteur.initialiser();     // construit déjà une première base vivante (seed principal, gelé)
 
@@ -53,8 +54,14 @@ if (PALIER_FILTRE && !PALIERS.some(p => p.id === PALIER_FILTRE)) {
    avant de continuer, pour qu'elle ne contamine jamais le reste du rejeu. */
 function executer(sql) {
   const r = Moteur.executer(sql);
-  if (r.ecritures) nouvelleBase();
+  if (r.ecritures) nouvelleBase(seedDe({ jeu: Moteur.etat.jeu }));   // on reconstruit LE MÊME jeu, pas la boutique
   return r;
+}
+
+/** Une base vivante par jeu de données (D068) : on ne reconstruit que quand le jeu demandé change, ce qui coûte
+ *  quelques millisecondes (D023). Le contenu des paliers 1 à 4 ne déclare aucun `jeu` : rien n'est reconstruit. */
+function surLeJeuDe(porteur) {
+  if (Moteur.etat.jeu !== jeuDe(porteur)) nouvelleBase(seedDe(porteur));
 }
 const dernierJeu = r => (r.jeux.length ? r.jeux[r.jeux.length - 1] : null);
 
@@ -72,6 +79,9 @@ const enregistrer = (categorie, id, niveau, titre, probleme) => rapport.push({ c
 const couverture = (id, titre, ok, bloquant, detail = "") => couvertureRapport.push({ id, titre, ok, bloquant, detail });
 
 const PIEGES = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11"];
+/* Les anomalies VOULUES du jeu sale (SCHEMA-EXPORT.md, vérifiées par verifier-seed-sale.mjs). Même mécanique
+   déclarative que `pieges` : un champ `anomalies` sur l'exercice, aucune détection automatique (D051). */
+const ANOMALIES = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13", "A14", "A15"];
 const idsConnus = new Set();
 const tentativeSciemmentFausse = "SELECT -999999 AS jamais_la_bonne_reponse";
 
@@ -140,6 +150,13 @@ function verifierExercice(ex) {
     if (ex.clause && !CLAUSES[ex.clause]) probleme.push(`clause inconnue de CLAUSES : ${ex.clause}`);
     if (ex.pieges !== undefined && (!Array.isArray(ex.pieges) || ex.pieges.some(p => !PIEGES.includes(p))))
       probleme.push(`« pieges » doit être un tableau d'identifiants parmi ${PIEGES.join(", ")}`);
+    if (ex.anomalies !== undefined && (!Array.isArray(ex.anomalies) || ex.anomalies.some(a => !ANOMALIES.includes(a))))
+      probleme.push(`« anomalies » doit être un tableau d'identifiants parmi ${ANOMALIES.join(", ")}`);
+    if (ex.jeu !== undefined && !JEUX.some(j => j.id === ex.jeu)) probleme.push(`jeu de données inconnu : ${ex.jeu}`);
+    if (ex.jeu !== "export" && Array.isArray(ex.anomalies) && ex.anomalies.length)
+      probleme.push("« anomalies » cité par un exercice qui ne travaille pas sur l'export brut");
+    if (ex.jeu === "export" && Array.isArray(ex.pieges) && ex.pieges.length)
+      probleme.push("« pieges » cité par un exercice qui travaille sur l'export brut : les pièges P1 à P11 sont ceux du seed principal");
 
     const indices = Indices.pour(ex);
     if (ex.type === "predire") {
@@ -168,6 +185,7 @@ function verifierExercice(ex) {
       return;    // le reste (exécution SQL) ne concerne que requete/corriger/predire
     }
 
+    surLeJeuDe(ex);                        // la base vivante doit porter le jeu de données de l'exercice
     const sql = ex.type === "predire" ? ex.requete : ex.solution;
     const jeu = verifierSQLReference(sql, ex, probleme);
     if (!jeu) return;
@@ -210,6 +228,7 @@ for (const mission of CONTENU.missions) {
     });
     (mission.etapes || []).forEach((etape, i) => {
       const p = [];
+      surLeJeuDe({ jeu: etape.jeu || mission.jeu });
       const jeu = verifierSQLReference(etape.solution, etape, p);
       if (jeu) verifierRienValideAvance(jeu, etape.comparer, p);
       if (p.length) probleme.push(`étape ${i + 1} — ${p.join(" ; ")}`);
@@ -228,6 +247,7 @@ for (const chap of CHAPITRES.filter(c => !PALIER_FILTRE || c.niveau === PALIER_F
     if (idsConnus.has(chap.id)) probleme.push("identifiant en double (exercice, mission ou chapitre)");
     idsConnus.add(chap.id);
     if (!PALIERS.some(p => p.id === chap.niveau)) probleme.push(`palier inconnu : ${chap.niveau}`);
+    if (chap.jeu !== undefined && !JEUX.some(j => j.id === chap.jeu)) probleme.push(`jeu de données inconnu : ${chap.jeu}`);
 
     const cites = chap.exercices || [];
     const vus = new Set();
@@ -242,9 +262,26 @@ for (const chap of CHAPITRES.filter(c => !PALIER_FILTRE || c.niveau === PALIER_F
     if (!Array.isArray(l.points) || !l.points.length) probleme.push("leçon sans points à retenir");
     if (!l.exemple || !l.exemple.code) probleme.push("leçon sans exemple de code");
     else {
+      surLeJeuDe(chap);                    // l'exemple « testable » s'exécute sur le jeu du chapitre
       const r = executer(l.exemple.code);
       if (r.erreur) probleme.push(`l'exemple de la leçon ne s'exécute pas sur le seed : ${r.erreur}`);
       else if (r.ecritures) probleme.push("l'exemple de la leçon écrit dans la base : hors programme");
+      else {
+        /* Ce que l'exemple RENVOIE, pas seulement le fait qu'il s'exécute (D068). L'auteur déclare le nombre de
+           lignes de chaque jeu de résultats ; on le compare à ce qui sort vraiment. Aucune analyse du texte de
+           `resultat` n'est tentée : la prose annonce aussi des VALEURS, et la lire demanderait une heuristique
+           qui se tromperait (mesuré : une expression régulière sur « N lignes » donne 6 faux positifs sur 61,
+           parce qu'une leçon cite couramment le nombre de lignes d'une TABLE). La justesse des valeurs et de la
+           prose reste donc un point de relecture humaine, rappelé en pied de rapport. */
+        const obtenues = r.jeux.map(j => j.lignes.length);
+        const declarees = l.exemple.lignes;
+        if (!Array.isArray(declarees) || declarees.some(n => !Number.isInteger(n) || n < 0))
+          probleme.push(`l'exemple doit déclarer « lignes », un tableau du nombre de lignes de chaque jeu de résultats (obtenu : [${obtenues.join(", ")}])`);
+        else if (declarees.length !== obtenues.length)
+          probleme.push(`l'exemple renvoie ${obtenues.length} jeu(x) de résultats, « lignes » en déclare ${declarees.length} ([${obtenues.join(", ")}] contre [${declarees.join(", ")}])`);
+        else if (declarees.some((n, i) => n !== obtenues[i]))
+          probleme.push(`l'exemple ne renvoie pas ce que la leçon déclare : [${obtenues.join(", ")}] au lieu de [${declarees.join(", ")}]`);
+      }
     }
   }, probleme);
   enregistrer("chapitre", chap.id, chap.niveau, chap.titre || chap.id, probleme);
@@ -290,6 +327,16 @@ if (!PALIER_FILTRE) {
   for (const piege of PIEGES) {
     const exos = reels.filter(e => Array.isArray(e.pieges) && e.pieges.includes(piege)).map(e => e.id);
     couverture(`piege-${piege}`, `Piège ${piege} exercé par au moins un exercice`, exos.length > 0, tousLesPaliersTermines, exos.join(", "));
+  }
+
+  /* Les anomalies de l'export brut, jumelles des pièges — mais elles n'appartiennent qu'au palier 5 : le contrôle
+     devient bloquant dès que CE palier est déclaré terminé, pas quand tous le sont. Une anomalie qu'aucun exercice
+     n'exerce est une anomalie entretenue pour rien, et le jeu est gelé : autant le savoir avant de le geler. */
+  const palierP5 = PALIERS.find(p => p.id === "P5");
+  for (const anomalie of ANOMALIES) {
+    const exos = reels.filter(e => Array.isArray(e.anomalies) && e.anomalies.includes(anomalie)).map(e => e.id);
+    couverture(`anomalie-${anomalie}`, `Anomalie ${anomalie} de l'export brut exercée par au moins un exercice`,
+      exos.length > 0, !!(palierP5 && palierP5.termine), exos.join(", "));
   }
 
   const citesParChapitre = new Set();
@@ -349,6 +396,6 @@ if (!enEchec.length && !couvertureBloquante.length) console.log("Tout est vert."
 else console.log(`${enEchec.length} exercice(s)/mission(s)/chapitre(s) en échec ; ${couvertureBloquante.length} contrôle(s) de couverture bloquant(s).`);
 if (couvertureAvertissement.length) console.log(`${couvertureAvertissement.length} avertissement(s) de couverture (palier non encore déclaré « termine »).`);
 
-console.log("\nCe que l'Autotest NE PEUT PAS juger : la clarté d'un énoncé, l'ambiguïté d'une consigne, la justesse d'une\nexplication, le dosage de la difficulté, la progression d'un palier. Aucune heuristique n'est tentée sur ces\npoints — une métrique approximative y donnerait une fausse sécurité. « Tout est vert » ne porte que sur ce que\nce script sait mesurer : la relecture humaine reste nécessaire sur le reste.\n");
+console.log("\nCe que l'Autotest NE PEUT PAS juger : la clarté d'un énoncé, l'ambiguïté d'une consigne, la justesse d'une\nexplication, le dosage de la difficulté, la progression d'un palier. Aucune heuristique n'est tentée sur ces\npoints — une métrique approximative y donnerait une fausse sécurité. « Tout est vert » ne porte que sur ce que\nce script sait mesurer : la relecture humaine reste nécessaire sur le reste.\n\nEn particulier, sur les LEÇONS : le nombre de lignes de chaque exemple est désormais contrôlé (champ « lignes »),\nmais les VALEURS que la prose annonce — « 735 d'un côté, 1934 de l'autre » — ne le sont pas, faute de pouvoir les\nlire sans heuristique. Point de relecture permanent : rejouer les exemples et comparer leur résultat à ce que la\nleçon en dit, en particulier après toute évolution d'un seed.\n");
 
 process.exit(enEchec.length || couvertureBloquante.length ? 1 : 0);

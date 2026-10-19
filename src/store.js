@@ -26,6 +26,9 @@ const Store = (() => {
       serie: { jours: 0, dernierJour: null },
       competences,
       exercices: {},
+      /* Par chapitre : seulement `leconVue` pour l'instant (une leçon sans exercice, D068/arbitrage A du lot 10).
+         L'avancement d'un chapitre ordinaire reste déduit de `exercices`, il n'est pas dupliqué ici. */
+      chapitres: {},
       missions: {},
       certifications: {},
       dernierExport: null,
@@ -49,6 +52,9 @@ const Store = (() => {
     (CONTENU.competences || []).forEach(c => {
       if (!e.competences[c.id]) e.competences[c.id] = { maitrise: 0, tentatives: 0, reussites: 0, derniereActivite: null };
     });
+    /* Même esprit que la réconciliation ci-dessus : une carte ajoutée après coup apparaît vide dans un état
+       ancien, sans migration de schéma et sans que l'utilisateur perde quoi que ce soit. */
+    if (!e.chapitres) e.chapitres = {};
     return e;
   }
 

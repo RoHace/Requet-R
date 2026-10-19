@@ -169,8 +169,8 @@ Programme des paliers : DECISIONS.md D021.
 | | `LAG` | évolution mensuelle, trou d'août (P6) | commandes par mois, 17 mois |
 | | `SUM() OVER` (cumul) | chiffre d'affaires cumulé par mois | `commandes` + `lignes_commande` |
 | | top-N par groupe | meilleur produit par catégorie, ex æquo compris | `produits` (rang 2 partagé en Informatique) |
-| **P5 Métier** | question métier floue | « le chiffre d'affaires » (§7), « client actif » au 2026-06-30 | P7, P11 |
-| | données sales, contrôles de cohérence | **second jeu de données, séparé de ce seed** (D027, pas encore construit) ; les invariants du §6 servent de modèle de ce qu'on contrôle | hors de ce seed |
+| **P5 Métier** | question métier floue | « le chiffre d'affaires » (§7) ; « le produit le plus vendu » (113 en unités, 101 en euros, 106 et 107 ex æquo en nombre de commandes) ; « un client actif » (26 / 22 / 12) ; « le panier moyen » (229,39 sur 54 commandes) | P5, P7, P10 |
+| | données sales, contrôles de cohérence | **second jeu de données, séparé de ce seed** (D027/D068 ; voir `SCHEMA-EXPORT.md`) ; les invariants du §6 servent de modèle de ce qu'on contrôle | hors de ce seed |
 | | `UNION`, `INTERSECT`, `EXCEPT` | clients ayant commandé en 2025 contre en 2026 | commandes 2025 / 2026 |
 | | CTE récursive (**bonus**) | chaîne de parrainage 201 → 203 → 206 → 214 | clients (P9) |
 
@@ -192,7 +192,7 @@ Requête de contrôle : `SELECT SUM(quantite * prix_unitaire) FROM lignes_comman
 
 À connaître **avant** d'écrire des exercices :
 
-- **Données sales : il n'y en a aucune, et c'est voulu.** Pas de doublon d'e-mail ni de client en double, pas de casse ou d'espaces incohérents, pas de statut hors liste, pas de date impossible, aucune violation d'invariant : les contrôles du §6 renvoient 0 ligne, et aucune consigne n'a jamais à écrire « sauf la ligne 217 ». Le palier 5 (« données sales », « contrôles de cohérence ») s'appuie sur un **second jeu de données, séparé**, qui n'existe pas encore et naîtra au lot du palier 5 (**D027**, Q4 résolue) : un export brut à nettoyer avant l'analyse, comme en entreprise. Il se chargera à la place de ce seed par `nouvelleBase(seed)`. Les anomalies y seront listées avec leur propre vérificateur ; celui de ce seed reste sans exception.
+- **Données sales : il n'y en a aucune, et c'est voulu.** Pas de doublon d'e-mail ni de client en double, pas de casse ou d'espaces incohérents, pas de statut hors liste, pas de date impossible, aucune violation d'invariant : les contrôles du §6 renvoient 0 ligne, et aucune consigne n'a jamais à écrire « sauf la ligne 217 ». Le palier 5 (« données sales », « contrôles de cohérence ») s'appuie sur un **second jeu de données, séparé** (**D027**, Q4 résolue ; construit au lot 10, D068) : un export brut à nettoyer avant l'analyse, comme en entreprise. Il est documenté dans **`SCHEMA-EXPORT.md`** — quatre fichiers, 68 lignes, aucune contrainte, 15 anomalies voulues — et se charge à la place de ce seed par `nouvelleBase(SEED_SALE_SQL)`. Ses anomalies ont **leur propre vérificateur** (`verifier-seed-sale.mjs`, qui contrôle qu'elles sont bien PRÉSENTES) ; celui de ce seed reste sans exception.
 - `FULL JOIN` utile : aucune ligne orpheline (clés étrangères obligatoires). Hors programme (D021).
 - Tris sur initiales accentuées, `UPPER` / `LIKE` sur des lettres accentuées : volontairement écartés.
 - Heures, fuseaux : aucune colonne n'a d'horaire.

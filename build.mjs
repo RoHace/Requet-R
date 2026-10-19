@@ -22,6 +22,7 @@ const SOURCES = {
   progression: "src/progression.js",
   routeur:     "src/routeur.js",
   seed:        "src/seed.sql",
+  seedSale:    "src/seed-sale.sql",
   sqljs:   "vendor/sql-wasm.js",
   wasm:    "vendor/sql-wasm.wasm"
 };
@@ -53,14 +54,15 @@ function verifierInlinable(fichier, contenu) {
   }
 }
 
-/* Le seed est injecté comme littéral JS : JSON.stringify, plus « < » échappé par prudence. */
-const seed = texte(SOURCES.seed);
-const seedLitteral = JSON.stringify(seed).replace(/</g, "\\u003c");
+/* Les seeds sont injectés comme littéraux JS : JSON.stringify, plus « < » échappé par prudence.
+   Le second (D027) est le jeu « sale » du palier 5, chargé à la place du premier par nouvelleBase(SEED_SALE_SQL). */
+const litteralSeed = f => JSON.stringify(texte(f)).replace(/</g, "\\u003c");
 
 const valeurs = {
   VENDOR_SQLJS: texte(SOURCES.sqljs),
   WASM_B64:     wasmB64,
-  SEED_SQL:     seedLitteral,
+  SEED_SQL:      litteralSeed(SOURCES.seed),
+  SEED_SALE_SQL: litteralSeed(SOURCES.seedSale),
   CONTENU:      texte(SOURCES.contenu),
   MOTEUR:       texte(SOURCES.moteur),
   COMPARATEUR:  texte(SOURCES.comparateur),

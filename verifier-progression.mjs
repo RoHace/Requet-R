@@ -23,6 +23,7 @@ function charger(fichiers, exports) {
 globalThis.initSqlJs = require("./vendor/sql-wasm.js");
 globalThis.WASM_B64 = readFileSync(join(RACINE, "vendor", "sql-wasm.wasm")).toString("base64");
 globalThis.SEED_SQL = source("seed.sql");
+globalThis.SEED_SALE_SQL = source("seed-sale.sql");   // second jeu de donnees (D027) : moteur.js ne le lit que si on le demande
 
 /* `localStorage` : magasin en mémoire, assez fidèle pour Store (getItem/setItem/removeItem). */
 function creerLocalStorage() {

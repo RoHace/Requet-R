@@ -283,6 +283,36 @@
   r = await verifier("SELECT AVG(prix) FROM produits");
   ok("1×1 : valeur attendue jamais affichée, arrondi nommé", !!r.querySelector(".comparaison__masque") && !/165[.,]31(?!\d)/.test(r.textContent) && /arrondie à 2 décimales/.test(r.textContent), r.textContent.slice(0, 300));
 
+  // ── Second jeu de données : « l'export brut » du palier 5 (D027, D068) ──
+  const segmentJeux = () => [...document.querySelectorAll('[role="dialog"] .segment[aria-label="Jeu de données"] button')];
+  const echap = () => { document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); };
+  await aller("#/bac-a-sable");
+  bouton("Schéma").click(); await attendre(250);
+  ok("jeux : hors exercice, le panneau Schéma offre la bascule entre les deux jeux",
+    segmentJeux().length === 2 && segmentJeux()[0].getAttribute("aria-pressed") === "true", segmentJeux().map(b => b.textContent.trim()));
+  segmentJeux().find(b => /Export brut/.test(b.textContent)).click(); await attendre(350);
+  ok("jeux : l'export brut montre ses 4 fichiers, sans aucune relation à lire",
+    Moteur.etat.jeu === "export" && document.querySelectorAll(".schema-onglets button").length === 4
+    && /Aucune clé étrangère/.test(document.querySelector('[role="dialog"]').textContent),
+    { jeu: Moteur.etat.jeu, onglets: document.querySelectorAll(".schema-onglets button").length });
+  ok("jeux : export_clients s'inspecte en entier (20 lignes, aperçu à 5)", !!bouton("Voir les 20 lignes"));
+  echap(); await attendre(200);
+
+  CONTENU.exercices.push({ id: "t-export", type: "requete", jeu: "export", titre: "t", question: "t", comparer: {},
+    solution: "SELECT UPPER(TRIM(ville)) AS v, COUNT(*) FROM export_clients WHERE ville IS NOT NULL AND TRIM(ville) NOT IN ('', 'N/A', '--') GROUP BY v" });
+  await aller("#/exercice/t-export");
+  ok("jeux : un exercice qui déclare jeu:\"export\" charge l'export brut dans la base vivante", Moteur.etat.jeu === "export", Moteur.etat.jeu);
+  bouton("Schéma").click(); await attendre(250);
+  ok("jeux : pendant un exercice, aucune bascule n'est offerte (D068) et le panneau montre le jeu de l'exercice",
+    segmentJeux().length === 0 && document.querySelectorAll(".schema-onglets button").length === 4, segmentJeux().length);
+  echap(); await attendre(200);
+  r = await verifier("SELECT UPPER(TRIM(ville)) AS v, COUNT(*) FROM export_clients WHERE ville IS NOT NULL AND TRIM(ville) NOT IN ('', 'N/A', '--') GROUP BY v");
+  ok("jeux : la solution nettoyée (6 villes réelles) est acceptée sur l'export brut", r.className.includes("--juste"), r.textContent.slice(0, 200));
+  r = await verifier("SELECT ville, COUNT(*) FROM export_clients GROUP BY ville");
+  ok("jeux : la version non nettoyée (17 villes apparentes) est refusée", r.className.includes("--faux"), r.textContent.slice(0, 200));
+  await aller("#/exercices"); await aller("#/exercice/p1-01");
+  ok("jeux : un exercice sans jeu déclaré revient à la boutique", Moteur.etat.jeu === "boutique" && Moteur.nbTables() === 5, { jeu: Moteur.etat.jeu, tables: Moteur.nbTables() });
+
   // bac à sable et hors ligne
   await aller("#/bac-a-sable");
   ok("bac à sable : aperçu exécuté (5 lignes)", document.querySelectorAll(".resultat tbody tr").length === 5);

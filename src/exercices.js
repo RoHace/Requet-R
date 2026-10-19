@@ -18,8 +18,9 @@
 /* ── Résultats attendus : calculés en exécutant la référence, jamais saisis (D032, D035) ── */
 const Attendus = (() => {
   const cache = new Map();
-  const executer = sql => {
-    const r = Moteur.executerIsole(sql, { plafond: false });          // une solution de référence n'est jamais plafonnée (D036)
+  const executer = (sql, porteur) => {
+    /* Le jeu de données de l'exercice (D027/D068, `jeu: "export"` au palier 5) ; la boutique par défaut. */
+    const r = Moteur.executerIsole(sql, { seed: seedDe(porteur), plafond: false });   // une solution de référence n'est jamais plafonnée (D036)
     if (r.erreur) throw new Error(`la requête de référence plante : ${r.erreur}`);
     if (!r.jeux.length) throw new Error("la requête de référence ne renvoie aucun jeu de résultats");
     return r.jeux[r.jeux.length - 1];
@@ -27,10 +28,10 @@ const Attendus = (() => {
   const memo = (cle, produire) => { if (!cache.has(cle)) cache.set(cle, produire()); return cache.get(cle); };
   return {
     /** Résultat attendu d'un exercice `requete` ou `corriger` : celui de sa solution, sur une base propre. Calculé une fois. */
-    de: ex => memo(`sol:${ex.id}`, () => executer(ex.solution)),
+    de: ex => memo(`sol:${ex.id}`, () => executer(ex.solution, ex)),
     /** Vraie réponse d'un exercice `predire` : le résultat de la requête montrée, son nombre de lignes, sa cellule. */
     predire: ex => memo(`pre:${ex.id}`, () => {
-      const jeu = executer(ex.requete);
+      const jeu = executer(ex.requete, ex);
       if (ex.predit === "valeur" && !(jeu.colonnes.length === 1 && jeu.lignes.length === 1))
         throw new Error(`predire « valeur » : la requête de ${ex.id} doit renvoyer une seule cellule (reçu ${jeu.lignes.length} ligne(s) et ${jeu.colonnes.length} colonne(s))`);
       return { jeu, nbLignes: jeu.lignes.length, valeur: ex.predit === "valeur" ? jeu.lignes[0][0] : null };
@@ -41,7 +42,8 @@ const Attendus = (() => {
 /** Verdict d'un exercice SQL (requete, corriger) : la requête de l'apprenant est exécutée sur une base jetable, neuve, et son
  *  résultat comparé à celui de la solution. Le texte de la requête n'entre jamais en jeu (D028), sauf D033. */
 function validerRequete(ex, sql) {
-  return Comparateur.evaluer({ attendu: Attendus.de(ex), rapport: Moteur.executerIsole(sql), options: ex.comparer || {}, sql, base: CONTENU.base });
+  return Comparateur.evaluer({ attendu: Attendus.de(ex), rapport: Moteur.executerIsole(sql, { seed: seedDe(ex) }),
+    options: ex.comparer || {}, sql, base: CONTENU.base });
 }
 
 /** Bloc commun à `requete` et `corriger` : éditeur, Exécuter (base vivante), Vérifier (base jetable), Réinitialiser. */
@@ -61,7 +63,7 @@ function rendreSQL(ex, api, { depart = null } = {}) {
     el("span.tres-muet.sql-aide", {}, "Ctrl + Entrée exécute · Ctrl + Maj + Entrée vérifie"),
     el("span.sql-barre__espace"),
     depart ? el("button.btn.btn--nu", { type: "button", onclick: () => { editeur.definir(depart); editeur.focus(); } }, "Remettre la requête de départ") : null,
-    el("button.btn.btn--nu", { type: "button", onclick: () => { const ms = nouvelleBase(); sortie.replaceChildren(); Toast.afficher(`Base reconstruite en ${ms} ms.`, "accent"); } }, "Réinitialiser la base"));
+    el("button.btn.btn--nu", { type: "button", onclick: () => { const ms = nouvelleBase(seedDe(ex)); sortie.replaceChildren(); Toast.afficher(`Base reconstruite en ${ms} ms.`, "accent"); } }, "Réinitialiser la base"));
   if (!api.reponsePrecedente) setTimeout(() => editeur.focus(), 60);
   return el("div", {},
     depart ? el("p.muet.exo__depart", {}, "Requête fautive de départ : modifie-la, exécute-la pour voir ce qu'elle donne, puis vérifie.") : null,

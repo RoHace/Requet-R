@@ -2,14 +2,38 @@
 /* ═══════════════════════════════════════════════════════════
    REQUÊT'R — moteur SQL (sorti de app.js au lot 3 : verifier-comparateur.mjs exerce ainsi le vrai code, pas une copie)
    SQLite (sql.js) tournant en mémoire. Aucun DOM : ce fichier se charge aussi sous Node.
-   Globaux fournis par le build : initSqlJs (vendor), WASM_B64, SEED_SQL.
+   Globaux fournis par le build : initSqlJs (vendor), WASM_B64, SEED_SQL, SEED_SALE_SQL.
    ═══════════════════════════════════════════════════════════ */
+
+/** Les deux jeux de données (D027, D068). `seed` est une FONCTION, pas une valeur : un vérificateur qui charge ce
+ *  fichier sans définir SEED_SALE_SQL ne doit pas échouer au chargement, seulement s'il demande ce jeu-là. */
+const JEUX = [
+  { id: "boutique", nom: "Boutique",    desc: "La base de démonstration, propre et complète." },
+  { id: "export",   nom: "Export brut", desc: "Un export jamais nettoyé, pour le palier 5." }
+];
+JEUX[0].seed = () => SEED_SQL;
+JEUX[1].seed = () => SEED_SALE_SQL;
+const JEU_DEFAUT = "boutique";
+
+/** Le jeu d'un exercice, d'un chapitre ou d'une étape de mission : son champ `jeu`, ou la boutique par défaut.
+ *  Un item sans `jeu` déclaré travaille donc sur le seed principal, comme tout le contenu des paliers 1 à 4. */
+function jeuDe(item) { return (item && item.jeu) || JEU_DEFAUT; }
+
+/** Le SEUL endroit qui traduit un `jeu` déclaré en seed : aucun écran ne choisit un seed lui-même (D068). */
+function seedDe(item) {
+  const id = jeuDe(item);
+  const jeu = JEUX.find(j => j.id === id);
+  if (!jeu) throw new Error(`jeu de données inconnu : ${id}`);
+  return jeu.seed();
+}
 
 /** SQLite (sql.js) tournant en mémoire. Le binaire WASM est décodé depuis WASM_B64 :
  *  on passe wasmBinary et JAMAIS l'option de localisation du fichier, qui déclencherait une requête réseau. */
 const Moteur = (() => {
   let SQL = null, db = null;
-  const etat = { version: null, msInit: null, msBase: null };
+  /* `jeu` : quel jeu de données a construit la base VIVANTE. C'est un fait sur la base, pas un réglage — l'explorateur
+     s'en sert pour dire ce qu'il montre, et pour n'offrir la bascule que là où elle est sans ambiguïté (D068). */
+  const etat = { version: null, msInit: null, msBase: null, jeu: JEU_DEFAUT };
   const LIMITE_LIGNES = 500;       // AFFICHAGE seulement : au-delà, la table de résultats est tronquée
   const LIMITE_LECTURE = 10000;    // lignes LUES par jeu de résultats (D036) : protège la mémoire d'un produit cartésien
   const DELAI_MS = 3000;           // durée de lecture au-delà de laquelle on abandonne (D036), contrôlée toutes les 256 lignes
@@ -136,5 +160,9 @@ function nouvelleBase(seed = SEED_SQL) {
   const debut = performance.now();
   Moteur.reinitialiser(seed);
   Moteur.etat.msBase = Math.round((performance.now() - debut) * 10) / 10;
+  /* Quel jeu vient d'être chargé : reconnu à l'identité du texte du seed, pour que la signature de D027 ne change
+     pas. Un seed inconnu (celui d'un test, par exemple) laisse `jeu` à null plutôt que de mentir. */
+  const jeu = JEUX.find(j => { try { return j.seed() === seed; } catch (e) { return false; } });
+  Moteur.etat.jeu = jeu ? jeu.id : null;
   return Moteur.etat.msBase;
 }
