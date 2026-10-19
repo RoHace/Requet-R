@@ -36,7 +36,7 @@
 
   // ── Navigation sur toutes les routes du rail (D047) ──
   for (const [chemin, attendu] of [
-    ["#/exercices", "Exercices"], ["#/lecons", "Parcours guidé"], ["#/missions", "Aucune mission pour l'instant"],
+    ["#/exercices", "Exercices"], ["#/lecons", "Parcours guidé"], ["#/missions", "Missions"],
     ["#/bac-a-sable", "Bac à sable SQL"], ["#/progression", "Compétences"], ["#/reglages", "Réglages"]
   ]) {
     await aller(chemin);
@@ -312,6 +312,116 @@
   ok("jeux : la version non nettoyée (17 villes apparentes) est refusée", r.className.includes("--faux"), r.textContent.slice(0, 200));
   await aller("#/exercices"); await aller("#/exercice/p1-01");
   ok("jeux : un exercice sans jeu déclaré revient à la boutique", Moteur.etat.jeu === "boutique" && Moteur.nbTables() === 5, { jeu: Moteur.etat.jeu, tables: Moteur.nbTables() });
+
+  // ── Missions (lot 11, D069) : l'écran n'était vérifié que dans son état vide. On joue ici une mission
+  //    factice de bout en bout — liste, démarrage, indices, brouillon, abandon, reprise, bilan, étoiles, XP,
+  //    certifications —, poussée dans CONTENU.missions puis retirée, comme `t-export` ci-dessus pour un
+  //    exercice. Sa 2ᵉ étape travaille sur l'export brut : c'est le seul moyen de prouver que la base vivante
+  //    suit le jeu de l'ÉTAPE (D068). Une mission du programme ne mélange jamais les deux jeux (D069) ;
+  //    ici, c'est le mécanisme qu'on mesure, pas le contenu.
+  const retourMission = () => document.querySelector(".retour");
+  const carteMission = t => [...document.querySelectorAll("button.carte")].find(b => new RegExp(t).test(b.textContent));
+  const MISSION_T = {
+    id: "t-mission", titre: "Mission factice du scénario", resume: "Trois étapes.", difficulte: 2,
+    duree: "5 min", competences: ["lire-filtrer", "agreger"],
+    contexte: "Le contexte d'entreprise, rappelé à chaque étape.",
+    retenir: "La leçon de la mission, affichée au bilan.",
+    etapes: [
+      { consigne: "Combien de catégories ?", solution: "SELECT COUNT(*) AS n FROM categories", piste: "Compte les lignes.", clause: "COUNT" },
+      { jeu: "export", consigne: "Combien de lignes dans export_clients ?", solution: "SELECT COUNT(*) AS n FROM export_clients", piste: "Une seule table." },
+      { consigne: "Combien de commandes livrées ?", solution: "SELECT COUNT(*) AS n FROM commandes WHERE statut = 'livree'", piste: "Un statut." }
+    ]
+  };
+  CONTENU.missions.push(MISSION_T);
+  try {
+    await aller("#/missions");
+    ok("mission : la carte annonce étapes, durée et difficulté, et propose « Commencer »",
+      /Mission factice du scénario/.test(document.body.innerText) && /3 étapes · 5 min/.test(document.body.innerText)
+      && !!carteMission("Mission factice") && /Commencer/.test(carteMission("Mission factice").textContent),
+      document.body.innerText.slice(0, 300));
+
+    const avantEtape = { agreger: Store.etat.competences["agreger"].tentatives, lire: Store.etat.competences["lire-filtrer"].tentatives };
+    carteMission("Mission factice").click(); await attendre(400);
+    ok("mission : l'étape 1 s'affiche avec le contexte d'entreprise et la consigne",
+      /ÉTAPE 1 \/ 3/.test(document.body.innerText) && /LA SITUATION/i.test(document.body.innerText)
+      && /contexte d'entreprise, rappelé/.test(document.body.innerText) && /Combien de catégories/.test(document.body.innerText),
+      document.body.innerText.slice(0, 300));
+
+    // un indice : compté, et persisté pour que les étoiles ne se regagnent pas après une reprise
+    document.querySelector(".indices__btn").click(); await attendre(200);
+    ok("mission : un indice est compté et persisté dans le Store",
+      Mission.courante.indicesTotal === 1 && Store.etat.missions["t-mission"].indicesTotal === 1,
+      { enMemoire: Mission.courante.indicesTotal, enStore: Store.etat.missions["t-mission"] });
+
+    saisir("SELECT 42"); bouton("Vérifier").click(); await attendre(400);
+    ok("mission : une mauvaise requête est refusée sans avancer d'étape",
+      !!retourMission() && retourMission().className.includes("--faux") && /ÉTAPE 1 \/ 3/.test(document.body.innerText),
+      document.body.innerText.slice(0, 200));
+
+    saisir("SELECT COUNT(*) AS n FROM categories"); bouton("Vérifier").click(); await attendre(600);
+    ok("mission : la bonne requête fait passer à l'étape 2, l'éditeur est vidé",
+      /ÉTAPE 2 \/ 3/.test(document.body.innerText) && zone().value === "", document.body.innerText.slice(0, 200));
+    ok("mission : une étape réussie crédite ses compétences comme un exercice (D069)",
+      Store.etat.competences["agreger"].tentatives === avantEtape.agreger + 1
+      && Store.etat.competences["lire-filtrer"].tentatives === avantEtape.lire + 1,
+      { avant: avantEtape, apres: { agreger: Store.etat.competences["agreger"].tentatives, lire: Store.etat.competences["lire-filtrer"].tentatives } });
+
+    // l'étape 2 déclare jeu:"export" : la base VIVANTE doit suivre, « Exécuter » comme « Vérifier » (D068)
+    ok("mission : une étape « jeu: export » charge l'export brut dans la base vivante", Moteur.etat.jeu === "export", Moteur.etat.jeu);
+    saisir("SELECT COUNT(*) AS n FROM export_clients"); bouton("Exécuter").click(); await attendre(400);
+    ok("mission : « Exécuter » trouve les tables de l'export brut", !/no such table/.test(document.body.innerText), document.body.innerText.slice(0, 250));
+
+    // abandon puis reprise : étape, brouillon et indices consommés doivent survivre
+    saisir("SELECT -- brouillon"); await attendre(300);
+    bouton("Quitter la mission").click(); await attendre(400);
+    ok("mission : « Quitter » revient à la liste, qui propose maintenant « Reprendre »",
+      !!carteMission("Mission factice") && /Reprendre/.test(carteMission("Mission factice").textContent)
+      && /reprise à l'étape 2/.test(document.body.innerText), document.body.innerText.slice(0, 300));
+    carteMission("Mission factice").click(); await attendre(400);
+    ok("mission : la reprise retrouve l'étape, le brouillon ET les indices déjà consommés",
+      /ÉTAPE 2 \/ 3/.test(document.body.innerText) && zone().value === "SELECT -- brouillon" && Mission.courante.indicesTotal === 1,
+      { etape: document.body.innerText.match(/ÉTAPE \d \/ \d/), brouillon: zone().value, indices: Mission.courante.indicesTotal });
+
+    saisir("SELECT COUNT(*) AS n FROM export_clients"); bouton("Vérifier").click(); await attendre(600);
+    ok("mission : la solution de l'étape sur l'export brut est acceptée", /ÉTAPE 3 \/ 3/.test(document.body.innerText), document.body.innerText.slice(0, 200));
+    ok("mission : l'étape suivante revient à la boutique", Moteur.etat.jeu === "boutique", Moteur.etat.jeu);
+
+    const xpAvant = Store.etat.xp;
+    saisir("SELECT COUNT(*) AS n FROM commandes WHERE statut = 'livree'"); bouton("Vérifier").click(); await attendre(700);
+    ok("mission : le bilan s'affiche, avec 2 étoiles (un indice) et le « À retenir »",
+      /MISSION TERMINÉE/.test(document.body.innerText) && Mission.courante.etoiles === 2
+      && /À retenir/.test(document.body.innerText) && /La leçon de la mission/.test(document.body.innerText),
+      { etoiles: Mission.courante && Mission.courante.etoiles, texte: document.body.innerText.slice(0, 350) });
+    ok("mission : les étoiles du bilan utilisent .pleine (jetons de la feuille de style, D063)",
+      document.querySelectorAll(".etoiles--grandes .pleine").length === 2,
+      document.querySelectorAll(".etoiles--grandes .pleine").length);
+    ok("mission : l'XP est versée une seule fois, au bilan (30 × 2 × 0,9 = 54)",
+      Mission.courante.xp === 54 && Store.etat.xp === xpAvant + 54, { xp: Mission.courante.xp, avant: xpAvant, apres: Store.etat.xp });
+    ok("mission : les certifications de mission tombent AU BILAN, pas au résultat suivant (D069)",
+      !!Store.etat.certifications["premiere-mission"] && Mission.courante.certifs.some(c => c.id === "premiere-mission")
+      && /Première mission/.test(document.body.innerText),
+      { store: Object.keys(Store.etat.certifications), bilan: Mission.courante.certifs.map(c => c.id) });
+    ok("mission : « Sans filet » n'est PAS obtenue avec un indice", !Store.etat.certifications["sans-indice"], Object.keys(Store.etat.certifications));
+
+    bouton("Autres missions").click(); await attendre(400);
+    ok("mission : la liste montre 2 étoiles pleines sur 3, et plus aucune étape résiduelle",
+      document.querySelectorAll(".etoiles .pleine").length === 2 && Store.etat.missions["t-mission"].etape === undefined,
+      { pleines: document.querySelectorAll(".etoiles .pleine").length, enr: Store.etat.missions["t-mission"] });
+    carteMission("Mission factice").click(); await attendre(400);
+    ok("mission : relancer une mission terminée repart de l'étape 1, sans indice",
+      /ÉTAPE 1 \/ 3/.test(document.body.innerText) && Mission.courante.indicesTotal === 0,
+      { etape: document.body.innerText.match(/ÉTAPE \d \/ \d/), indices: Mission.courante.indicesTotal });
+    bouton("Quitter la mission").click(); await attendre(300);
+    ok("mission : le palmarès (2 étoiles) survit à une relance abandonnée",
+      Store.etat.missions["t-mission"].statut === "terminee" && Store.etat.missions["t-mission"].etoiles === 2,
+      Store.etat.missions["t-mission"]);
+  } finally {
+    CONTENU.missions.splice(CONTENU.missions.indexOf(MISSION_T), 1);
+    if (Mission.courante) Mission.quitter();
+  }
+  await aller("#/exercices"); await aller("#/exercice/p1-01");
+  ok("mission : après une mission sur l'export, un exercice sans jeu déclaré revient à la boutique",
+    Moteur.etat.jeu === "boutique" && Moteur.nbTables() === 5, { jeu: Moteur.etat.jeu, tables: Moteur.nbTables() });
 
   // bac à sable et hors ligne
   await aller("#/bac-a-sable");

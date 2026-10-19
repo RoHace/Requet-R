@@ -489,6 +489,13 @@ a{color:var(--accent-fort); text-decoration:none}
   color:var(--accent-fort); margin-bottom:4px;
 }
 .contexte p{font-size:13.5px; line-height:1.55; color:var(--texte)}
+/* Le brief d'une mission (D069), rappelé à chaque étape : même bloc, en sobre, pour que la consigne de
+   l'étape — qui porte l'accent — reste ce qu'on lit en premier. Aucun jeton nouveau. */
+.contexte--brief{
+  border-left-color:var(--bord-fort); background:var(--surface-2); margin-bottom:10px;
+}
+.contexte--brief b{color:var(--texte-3)}
+.contexte--brief p{color:var(--texte-2)}
 .etape{display:flex; gap:11px; align-items:baseline; padding:9px 0; font-size:13.5px; color:var(--texte-3)}
 .etape + .etape{border-top:1px solid var(--bord)}
 .etape__marque{

@@ -485,6 +485,210 @@ proteger("MI-07", "demarrer() reprend le brouillon et l'étape sauvegardés (rep
   } finally { CONTENU.missions.pop(); }
 });
 
+
+/* ═══ Mission, les sept défauts du lot 11 (D069) ═══════════════════════════════════════════════════
+   Chacun de ces sept critères a été écrit AVANT le correctif et vérifié en échec contre le code du
+   lot 10, puis en succès après. Ils ne testent pas le contenu (c'est l'Autotest) mais la mécanique,
+   exactement là où sept ans de tests verts n'avaient rien vu faute de contenu réel (règle de D068). */
+
+/** Mission factice à deux étapes dont la première porte des indices gradués (piste, clause, solution) :
+ *  MISSION_TEST n'en a aucun, et plusieurs des défauts ne se voient qu'avec une échelle d'indices. */
+const MISSION_INDICES = {
+  id: "test-mission-indices", titre: "Mission de test (indices gradués)",
+  difficulte: 2, competences: [CONTENU.competences[0].id],
+  etapes: [
+    { consigne: "Combien de catégories ?", solution: "SELECT COUNT(*) FROM categories", comparer: {},
+      piste: "Compte les lignes.", clause: "COUNT" },
+    { consigne: "Combien de clients ?", solution: "SELECT COUNT(*) FROM clients", comparer: {} }
+  ]
+};
+
+/** Mission factice dont l'unique étape travaille sur le second jeu de données (D068). */
+const MISSION_EXPORT = {
+  id: "test-mission-export", titre: "Mission de test (export brut)",
+  difficulte: 1, competences: [CONTENU.competences[0].id],
+  etapes: [{ jeu: "export", consigne: "Combien de lignes ?", solution: "SELECT COUNT(*) FROM export_clients", comparer: {} }]
+};
+
+/** Joue une mission jusqu'au bout en répondant juste à chaque étape. */
+function terminerMission(def) {
+  for (const etape of def.etapes) Mission.verifier(etape.solution);
+}
+
+/* ── MI-08 : les quatre certifications de mission tombent AU BILAN ────────────────────────────────
+   Défaut : terminer() appelait enregistrerResultat (donc verifierCertifications) avant d'écrire
+   `statut: "terminee"`, que les quatre conditions lisent. Elles ne tombaient jamais au bilan et
+   arrivaient plus tard, sur un exercice sans rapport. Hérité de Classe'R (classer-v2.html:8543). */
+proteger("MI-08", "les certifications de mission tombent au bilan, pas au résultat suivant", () => {
+  neuf();
+  CONTENU.missions.push(MISSION_TEST);
+  try {
+    Mission.demarrer("test-mission");
+    terminerMission(MISSION_TEST);
+    const rendues = Mission.courante.certifs.map(c => c.id);
+    condition("MI-08", "les certifications de mission tombent au bilan, pas au résultat suivant",
+      !!Store.etat.certifications["premiere-mission"] && rendues.includes("premiere-mission"),
+      "« premiere-mission » en Store ET annoncée au bilan",
+      `Store : ${Object.keys(Store.etat.certifications).join(", ") || "aucune"} ; bilan : ${rendues.join(", ") || "aucune"}`);
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-09 : une étape « jeu: export » travaille sur le second jeu ────────────────────────────────
+   Défaut : resultatEtape et verifier appelaient executerIsole sans `seed`, donc sur la boutique.
+   L'Autotest, lui, honorait etape.jeu : le contenu était déclaré vert et injouable. */
+proteger("MI-09", "une étape « jeu: export » calcule sa référence et se valide sur le jeu sale", () => {
+  neuf();
+  CONTENU.missions.push(MISSION_EXPORT);
+  try {
+    Mission.demarrer("test-mission-export");
+    const res = Mission.verifier("SELECT COUNT(*) FROM export_clients");
+    condition("MI-09", "une étape « jeu: export » calcule sa référence et se valide sur le jeu sale",
+      res.reussi && Mission.courante.etat === "bilan", "acceptée, bilan atteint",
+      `${res.statut} — ${String(res.constat).slice(0, 90)}`);
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-10 : quitter() ne ressuscite pas une mission terminée ─────────────────────────────────────
+   Défaut : quitter() passait par sauvegarderBrouillon, qui reposait `etape` et `statut` sur un
+   enregistrement déjà `terminee` ; relancer la mission repartait de sa DERNIÈRE étape. */
+proteger("MI-10", "quitter() après le bilan ne repose ni étape ni brouillon sur une mission terminée", () => {
+  neuf();
+  CONTENU.missions.push(MISSION_TEST);
+  try {
+    Mission.demarrer("test-mission");
+    terminerMission(MISSION_TEST);
+    Mission.quitter();
+    const enr = Store.etat.missions["test-mission"];
+    Mission.demarrer("test-mission");
+    condition("MI-10", "quitter() après le bilan ne repose ni étape ni brouillon sur une mission terminée",
+      enr.statut === "terminee" && enr.etape === undefined && Mission.courante.etape === 0,
+      "statut terminee, aucune étape résiduelle, relance à l'étape 0",
+      `statut ${enr.statut}, etape ${enr.etape}, relance à l'étape ${Mission.courante.etape}`);
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-11 : les indices survivent à une reprise ──────────────────────────────────────────────────
+   Défaut : sauvegarderBrouillon n'écrivait que {etape, brouillon, statut} et demarrer reposait
+   indicesTotal à 0 : trois indices puis quitter/reprendre redonnaient trois étoiles. */
+proteger("MI-11", "les indices consommés survivent à un abandon et à une reprise", () => {
+  neuf();
+  CONTENU.missions.push(MISSION_INDICES);
+  try {
+    Mission.demarrer("test-mission-indices");
+    const liste = Indices.pour(MISSION_INDICES.etapes[0]);
+    Mission.indice(liste);
+    Mission.indice(liste);
+    Mission.quitter();
+    Mission.demarrer("test-mission-indices");
+    condition("MI-11", "les indices consommés survivent à un abandon et à une reprise",
+      Mission.courante.indicesTotal === 2, "indicesTotal 2 après reprise", String(Mission.courante.indicesTotal));
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-12 : une solution révélée annule l'XP et plafonne la maîtrise (parité D046) ───────────────
+   Défaut : révéler la solution d'une étape coûtait un indice comme une piste — la mission se
+   terminait encore à 2 étoiles, avec une maîtrise créditée à 0,9. D069 aligne sur D046. */
+proteger("MI-12", "une solution révélée sur une étape annule l'XP de la mission (parité D046)", () => {
+  neuf();
+  CONTENU.missions.push(MISSION_INDICES);
+  try {
+    Mission.demarrer("test-mission-indices");
+    const liste = Indices.pour(MISSION_INDICES.etapes[0]);
+    liste.forEach(() => Mission.indice(liste));          // jusqu'à la solution révélée incluse
+    const xpAvant = Store.etat.xp;
+    terminerMission(MISSION_INDICES);
+    condition("MI-12", "une solution révélée sur une étape annule l'XP de la mission (parité D046)",
+      Mission.courante.solutionRevelee === true && Mission.courante.xp === 0 && Store.etat.xp === xpAvant,
+      "solution révélée reconnue, 0 XP versée",
+      `revelee ${Mission.courante.solutionRevelee}, xp ${Mission.courante.xp}, Store.xp ${xpAvant} → ${Store.etat.xp}`);
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-13 : le palmarès survit à « Refaire sans indice », et n'est jamais revu à la baisse ───────
+   Deux défauts d'un coup : recommencer() faisait `delete e.missions[id]` (les étoiles gagnées
+   disparaissaient dès qu'on abandonnait la reprise), et terminer() écrivait `etoiles: m.etoiles`
+   sans comparer, alors que Classe'R garde le maximum (classer-v2.html:8553). */
+proteger("MI-13", "« Refaire sans indice » garde le palmarès, et un passage moins bon ne le dégrade pas", () => {
+  neuf();
+  CONTENU.missions.push(MISSION_INDICES);
+  try {
+    Mission.demarrer("test-mission-indices");
+    terminerMission(MISSION_INDICES);                       // 3 étoiles, sans indice
+    Mission.courante = null;
+    Mission.recommencer("test-mission-indices");            // refaire : le palmarès doit rester
+    const apresRecommencer = Store.etat.missions["test-mission-indices"];
+    const liste = Indices.pour(MISSION_INDICES.etapes[0]);
+    Mission.indice(liste);                                  // un indice : ce passage vaut 2 étoiles
+    terminerMission(MISSION_INDICES);
+    const enr = Store.etat.missions["test-mission-indices"];
+    condition("MI-13", "« Refaire sans indice » garde le palmarès, et un passage moins bon ne le dégrade pas",
+      apresRecommencer && apresRecommencer.statut === "terminee" && apresRecommencer.etoiles === 3
+      && Mission.courante.etoiles === 2 && enr.etoiles === 3 && enr.meilleurScore === 3,
+      "palmarès 3 étoiles conservé pendant la reprise, puis maintenu malgré un passage à 2",
+      `après recommencer : ${JSON.stringify(apresRecommencer)} ; passage : ${Mission.courante.etoiles} étoile(s) ; final : ${JSON.stringify(enr)}`);
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-14 : une mission sans étape est refusée, sans exception ───────────────────────────────────
+   Défaut : etapeCourante() renvoyait undefined et Indices.pour(undefined) jetait — l'écran restait
+   figé sans rien dire. Erreur d'auteur, désormais refusée ici ET par l'Autotest. */
+proteger("MI-14", "une mission sans étape est refusée par demarrer(), sans exception", () => {
+  neuf();
+  Mission.courante = null;      // neuf() ne remet que le Store : la mission du test précédent survivrait
+  const vide = { id: "test-mission-vide", titre: "Mission sans étape", difficulte: 1, competences: [], etapes: [] };
+  CONTENU.missions.push(vide);
+  try {
+    let jete = null, ok = null;
+    try { ok = Mission.demarrer("test-mission-vide"); } catch (e) { jete = e.message; }
+    condition("MI-14", "une mission sans étape est refusée par demarrer(), sans exception",
+      jete === null && ok === false && Mission.courante === null,
+      "refusée (false), aucune exception, aucune mission courante",
+      `exception ${jete}, retour ${ok}, courante ${Mission.courante && Mission.courante.def.id}`);
+  } finally { CONTENU.missions.pop(); }
+});
+
+/* ── MI-15 : une mission ne vaut jamais plus qu'une série de même longueur ────────────────────────
+   Contrainte posée avec D069 (« crédite chaque étape, mais pas plus qu'une série ») : une étape
+   réussie crédite ses compétences comme un exercice, et l'XP reste versée UNE fois, au bilan.
+   On mesure les deux côte à côte sur la même compétence neuve, à indices égaux (aucun). */
+proteger("MI-15", "une mission de N étapes ne crédite pas plus qu'une série de N exercices", () => {
+  const idComp = CONTENU.competences[0].id;
+  /* Trois étapes : le minimum qu'une mission porte (D069), pour deux raisons qui se rejoignent. Le critère
+     de conception en exige trois (deux pour établir, une pour requalifier), et c'est aussi le seuil où la
+     formule de Classe'R — 30 x difficulté, versée UNE fois — cesse de dépasser une série de même longueur
+     à 10 x difficulté par exercice : à deux étapes la mission paierait 30 contre 20. */
+  const troisEtapes = {
+    id: "test-mission-poids", titre: "Mission de test (poids)", difficulte: 1, competences: [idComp],
+    etapes: [
+      { consigne: "Un", solution: "SELECT COUNT(*) FROM categories", comparer: {} },
+      { consigne: "Deux", solution: "SELECT COUNT(*) FROM clients", comparer: {} },
+      { consigne: "Trois", solution: "SELECT COUNT(*) FROM produits", comparer: {} }
+    ]
+  };
+
+  neuf();
+  CONTENU.missions.push(troisEtapes);
+  let parMission;
+  try {
+    Mission.demarrer("test-mission-poids");
+    terminerMission(troisEtapes);
+    parMission = { maitrise: Store.etat.competences[idComp].maitrise, xp: Store.etat.xp, tentatives: Store.etat.competences[idComp].tentatives };
+  } finally { CONTENU.missions.pop(); }
+
+  /* Trois exercices réussis sur la même compétence, même difficulté, sans indice : le point de comparaison. */
+  neuf();
+  for (let i = 0; i < 3; i++)
+    Progression.enregistrerResultat({ competences: [idComp], reussi: true, difficulte: 1, xp: 10, facteur: 1 });
+  const parSerie = { maitrise: Store.etat.competences[idComp].maitrise, xp: Store.etat.xp, tentatives: Store.etat.competences[idComp].tentatives };
+
+  condition("MI-15", "une mission de N étapes ne crédite pas plus qu'une série de N exercices",
+    parMission.tentatives === parSerie.tentatives
+    && Math.abs(parMission.maitrise - parSerie.maitrise) < 1e-9
+    && parMission.xp <= parSerie.xp,
+    "même maîtrise et même nombre de tentatives qu'une série de 3, XP jamais supérieure",
+    `mission ${JSON.stringify(parMission)} contre série ${JSON.stringify(parSerie)}`);
+});
+
 /* Le contrôle par mutation (casser une règle dans une copie jetable de src/, relancer, constater l'échec,
    comme au lot 3 : DECISIONS.md D038) est fait à la main après une exécution verte de ce script — pas ici :
    un « mutant » qui s'auto-évalue avec la même formule mutée ne prouve rien (c'est tautologique). */

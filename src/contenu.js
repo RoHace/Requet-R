@@ -100,7 +100,232 @@ const CONTENU = {
       condition: e => CONTENU.missions.length > 0 && CONTENU.missions.every(m => e.missions[m.id] && e.missions[m.id].statut === "terminee") }
   ],
 
-  missions: [],
+  /* Missions transversales (D048, D069, lot 11). Une mission n'est pas une série d'exercices enchaînés : c'est le
+     seul endroit où une réponse juste peut se révéler être la réponse à une AUTRE question. Deux règles d'écriture
+     en découlent, et chaque mission ci-dessous les respecte, étape nommée :
+       — au moins une étape dont le résultat REQUALIFIE un résultat précédent ;
+       — au moins une étape DÉICTIQUE (« ces cinq produits », « ces commandes-là », « les deux qui manquaient »),
+         qu'on ne peut pas résoudre sans avoir fait la précédente : l'écran n'affiche que la consigne courante.
+     Toutes les valeurs citées dans les `retenir` ont été relevées en EXÉCUTANT les requêtes contre les seeds gelés,
+     jamais écrites de mémoire. Les durées sont estimées, pas mesurées (D069). */
+  missions: [
+
+    /* ══ M1 — trois étapes, difficulté 1. Requalification : E3 montre que la liste de E1 ne répondait pas à la
+       question qu'on croyait. Déictique : E2 (« ces cinq produits »). ══ */
+    {
+      id: "m-reassort", titre: "Le réassort de septembre", difficulte: 1, duree: "10 min",
+      competences: ["lire-filtrer", "agreger", "joindre"],
+      resume: "Les ventes de la rentrée, et le produit qu'il faut recommander. Suppose les agrégats (SUM, GROUP BY) et une jointure entre deux tables.",
+      contexte: "Le service achats prépare la commande de réassort et te demande la liste des produits qui marchent le mieux. Une phrase, et deux façons de la comprendre.",
+      retenir: "« Le produit qui marche le mieux » ne veut rien dire tant qu'on n'a pas dit en quoi. Les cinq meilleures ventes en unités rapportent 722,50 € à elles cinq ; le premier au chiffre d'affaires en rapporte 5 146,00 € à lui seul, avec 4 unités vendues. Les bougies chauffe-plat sont premières en volume (21 unités) et dernières en argent (73,50 €) : avant de produire un classement, demande au service achats s'il réapprovisionne un stock ou s'il défend une marge.",
+      etapes: [
+        {
+          consigne: "Le service achats veut réapprovisionner les produits qui se vendent le plus. Donne les 5 produits les plus vendus en unités, en ignorant les commandes annulées : identifiant, nom, puis nombre d'unités vendues, du plus vendu au moins vendu.",
+          solution: "SELECT p.id, p.nom, SUM(l.quantite) AS unites\n  FROM lignes_commande l\n  JOIN commandes c ON c.id = l.commande_id\n  JOIN produits p ON p.id = l.produit_id\n WHERE c.statut <> 'annulee'\n GROUP BY p.id, p.nom\n ORDER BY unites DESC, p.id\n LIMIT 5",
+          comparer: { ordonne: { cles: [2] } },
+          competences: ["joindre", "agreger"],
+          piste: "Les unités vendues sont sur la ligne de commande, le nom sur le produit, et le statut sur la commande : les trois tables sont nécessaires.",
+          clause: "GROUP BY"
+        },
+        {
+          /* DÉICTIQUE : « ces cinq produits » n'a de référent que le résultat de l'étape 1. */
+          consigne: "Le service achats transmet ta liste au contrôle de gestion, qui demande ce que ces cinq produits rapportent. Pour ces cinq produits-là, donne l'identifiant, le nom, puis le chiffre d'affaires produits (quantité × prix facturé, hors commandes annulées et retournées), du plus gros au plus petit chiffre d'affaires.",
+          solution: "SELECT p.id, p.nom,\n       ROUND(SUM(CASE WHEN c.statut NOT IN ('annulee', 'retournee')\n                      THEN l.quantite * l.prix_unitaire ELSE 0 END), 2) AS ca\n  FROM lignes_commande l\n  JOIN commandes c ON c.id = l.commande_id\n  JOIN produits p ON p.id = l.produit_id\n WHERE p.id IN (113, 107, 108, 126, 128)\n GROUP BY p.id, p.nom\n ORDER BY ca DESC, p.id",
+          comparer: { ordonne: { cles: [2] } },
+          competences: ["agreger", "lire-filtrer"],
+          piste: "Les cinq identifiants viennent de l'étape précédente : la requête n'a plus à les chercher, seulement à s'y restreindre.",
+          clause: "IN"
+        },
+        {
+          /* REQUALIFICATION : aucun des produits de E1 n'est ici, sauf 107 au dernier rang. */
+          consigne: "Dernière vérification avant d'envoyer : les 5 produits au plus gros chiffre d'affaires produits, tous produits confondus. Identifiant, nom, puis chiffre d'affaires, du plus gros au plus petit.",
+          solution: "SELECT p.id, p.nom, ROUND(SUM(l.quantite * l.prix_unitaire), 2) AS ca\n  FROM lignes_commande l\n  JOIN commandes c ON c.id = l.commande_id\n  JOIN produits p ON p.id = l.produit_id\n WHERE c.statut NOT IN ('annulee', 'retournee')\n GROUP BY p.id, p.nom\n ORDER BY ca DESC, p.id\n LIMIT 5",
+          comparer: { ordonne: { cles: [2] } },
+          competences: ["joindre", "agreger"],
+          piste: "Même forme qu'à l'étape 1, mais la valeur agrégée change — et le filtre sur les statuts n'est pas le même.",
+          clause: "ORDER BY"
+        }
+      ]
+    },
+
+    /* ══ M2 — six étapes, difficulté 2. Requalification : E5 établit qu'un quart du chiffre annoncé en E3 et E4
+       n'est pas encaissé. Déictique : E6 (« parmi ces commandes-là »). ══ */
+    {
+      id: "m-chiffre-lundi", titre: "Le chiffre du lundi matin", difficulte: 2, duree: "25 min",
+      competences: ["dates", "agreger", "joindre", "vocabulaire-metier"],
+      resume: "La direction veut un chiffre pour le point de mi-année. Il y en a plusieurs. Suppose les agrégats, les jointures, et de savoir filtrer sur des dates.",
+      contexte: "Lundi 30 juin 2026. La direction prépare le point de mi-année et te demande un chiffre : ce que la boutique a facturé sur le premier semestre 2026. Tu as la base, et une heure.",
+      retenir: "Un chiffre n'a de sens qu'avec sa définition, et « facturé » n'est pas « encaissé ». Sur ce semestre, 897,00 € des 3 465,00 € annoncés concernent 8 commandes que le client n'a pas encore reçues — un quart du total. Et un montant porté par la commande (ici les frais de port) additionné après une jointure sur les lignes est compté une fois par ligne : 220,50 € de frais au lieu de 100,50 €, soit un total de 3 585,00 € au lieu de 3 465,00 €. Les 26 commandes du semestre portent 47 lignes : c'est tout l'écart.",
+      etapes: [
+        {
+          consigne: "Avant de calculer quoi que ce soit, regarde la matière. Pour les commandes passées entre le 1er janvier et le 30 juin 2026, donne le nombre de commandes, puis le nombre de lignes de commande, sur une seule ligne.",
+          solution: "SELECT COUNT(DISTINCT c.id) AS commandes, COUNT(*) AS lignes\n  FROM commandes c\n  JOIN lignes_commande l ON l.commande_id = c.id\n WHERE c.date_commande BETWEEN '2026-01-01' AND '2026-06-30'",
+          comparer: {},
+          competences: ["dates", "agreger"],
+          piste: "Les deux nombres sortent de la même requête, mais pas du même comptage : après une jointure, une commande apparaît autant de fois qu'elle a de lignes.",
+          clause: "COUNT"
+        },
+        {
+          consigne: "« Ce qu'on a facturé » n'est pas un chiffre, c'en est deux : on va produire les deux. D'abord le chiffre d'affaires produits du semestre — la somme des quantités multipliées par le prix facturé, pour les commandes qui ne sont ni annulées ni retournées. Une seule valeur.",
+          solution: "SELECT ROUND(SUM(l.quantite * l.prix_unitaire), 2) AS ca_produits\n  FROM commandes c\n  JOIN lignes_commande l ON l.commande_id = c.id\n WHERE c.date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n   AND c.statut NOT IN ('annulee', 'retournee')",
+          comparer: {},
+          competences: ["joindre", "agreger", "vocabulaire-metier"],
+          piste: "Le prix à utiliser est celui qui a été facturé le jour de la commande, et il est porté par la ligne, pas par le produit.",
+          clause: "SUM"
+        },
+        {
+          consigne: "Maintenant le chiffre d'affaires total : le chiffre d'affaires produits, plus les frais de port des mêmes commandes, les frais étant comptés une fois par commande. Donne trois colonnes sur une ligne : le chiffre d'affaires produits, les frais de port, puis le total.",
+          solution: "SELECT\n  ROUND((SELECT SUM(l.quantite * l.prix_unitaire)\n           FROM commandes c JOIN lignes_commande l ON l.commande_id = c.id\n          WHERE c.date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n            AND c.statut NOT IN ('annulee', 'retournee')), 2) AS ca_produits,\n  ROUND((SELECT SUM(frais_port) FROM commandes\n          WHERE date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n            AND statut NOT IN ('annulee', 'retournee')), 2) AS frais,\n  ROUND((SELECT SUM(l.quantite * l.prix_unitaire)\n           FROM commandes c JOIN lignes_commande l ON l.commande_id = c.id\n          WHERE c.date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n            AND c.statut NOT IN ('annulee', 'retournee'))\n      + (SELECT SUM(frais_port) FROM commandes\n          WHERE date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n            AND statut NOT IN ('annulee', 'retournee')), 2) AS ca_total",
+          comparer: {},
+          competences: ["agreger", "vocabulaire-metier"],
+          piste: "Les deux nombres de l'étape 1 n'étaient pas égaux. Si une somme de frais de port se promène à côté des lignes de commande, demande-toi combien de fois chaque commande est présente.",
+          clause: "SUM"
+        },
+        {
+          consigne: "La direction veut savoir où on en est par rapport à l'an dernier. Donne, pour le premier semestre 2025 puis pour le premier semestre 2026, l'année suivie du chiffre d'affaires produits : une ligne par année, de la plus ancienne à la plus récente.",
+          solution: "SELECT strftime('%Y', c.date_commande) AS annee,\n       ROUND(SUM(l.quantite * l.prix_unitaire), 2) AS ca_produits\n  FROM commandes c\n  JOIN lignes_commande l ON l.commande_id = c.id\n WHERE strftime('%m', c.date_commande) <= '06'\n   AND c.statut NOT IN ('annulee', 'retournee')\n GROUP BY annee\n ORDER BY annee",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["dates", "agreger"],
+          piste: "Le mois et l'année s'extraient d'une date sans la découper à la main ; un premier semestre, c'est un mois inférieur ou égal à 06.",
+          clause: "strftime"
+        },
+        {
+          /* REQUALIFICATION : le chiffre des étapes 3 et 4 n'est pas ce que la direction croit. */
+          consigne: "Une dernière vérification avant que ce chiffre soit annoncé. Le chiffre d'affaires produits compte toutes les commandes qui ne sont ni annulées ni retournées — y compris celles que le client n'a pas encore reçues. Donne, pour le même semestre, le nombre de commandes encore en préparation ou expédiées, puis le montant produits qu'elles représentent.",
+          solution: "SELECT COUNT(DISTINCT c.id) AS commandes,\n       ROUND(SUM(l.quantite * l.prix_unitaire), 2) AS produits\n  FROM commandes c\n  JOIN lignes_commande l ON l.commande_id = c.id\n WHERE c.date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n   AND c.statut IN ('expediee', 'en_preparation')",
+          comparer: {},
+          competences: ["lire-filtrer", "agreger", "vocabulaire-metier"],
+          piste: "Deux statuts suffisent à décrire « pas encore reçue par le client », et le semestre est le même qu'aux étapes précédentes.",
+          clause: "IN"
+        },
+        {
+          /* DÉICTIQUE : « ces commandes-là » n'a de référent que le résultat de l'étape 5. */
+          consigne: "La direction veut relancer la plus grosse d'abord. Parmi ces commandes-là, donne celle dont le montant produits est le plus élevé : son identifiant, sa date de commande, puis son montant produits.",
+          solution: "SELECT c.id, c.date_commande,\n       ROUND(SUM(l.quantite * l.prix_unitaire), 2) AS produits\n  FROM commandes c\n  JOIN lignes_commande l ON l.commande_id = c.id\n WHERE c.date_commande BETWEEN '2026-01-01' AND '2026-06-30'\n   AND c.statut IN ('expediee', 'en_preparation')\n GROUP BY c.id, c.date_commande\n ORDER BY produits DESC, c.id\n LIMIT 1",
+          comparer: { ordonne: { cles: [2] } },
+          competences: ["joindre", "agreger"],
+          piste: "Même population qu'à l'étape précédente, mais détaillée par commande au lieu d'être additionnée.",
+          clause: "LIMIT"
+        }
+      ]
+    },
+
+    /* ══ M3 — cinq étapes, difficulté 3. Requalification : E2 et E3 montrent que la liste de E1 était incomplète.
+       Déictique : E3 (« les clients que ta première liste a manqués »). ══ */
+    {
+      id: "m-clients-partis", titre: "Les clients qu'on croyait partis", difficulte: 3, duree: "25 min",
+      competences: ["valeurs-manquantes", "sous-requetes", "dates", "classer-cumuler"],
+      resume: "Le commercial veut la liste des clients à relancer. Suppose les LEFT JOIN, les sous-requêtes, et ce qu'un NULL change dans une comparaison.",
+      contexte: "Le commercial monte une campagne de reconquête et te demande « la liste des clients qui n'ont jamais rien acheté ». Il part en rendez-vous dans deux heures avec ce que tu lui donneras.",
+      retenir: "« N'a jamais rien acheté » et « n'a aucune commande » ne désignent pas les mêmes personnes : 6 clients n'ont aucune commande du tout, mais 8 n'ont aucune commande VALIDE. Les deux qui manquaient — Mercier (219) et Garnier (232) — ont bien commandé, et tout a été annulé. Une absence de ligne et une ligne qui ne compte pas se ressemblent dans un résultat et ne se cherchent pas de la même façon : la première se trouve par une anti-jointure, la seconde par une condition sur le statut.",
+      etapes: [
+        {
+          consigne: "Commence par la demande telle qu'elle arrive : les clients qui n'ont aucune commande. Donne leur identifiant puis leur nom, par identifiant croissant.",
+          solution: "SELECT cl.id, cl.nom\n  FROM clients cl\n  LEFT JOIN commandes o ON o.client_id = cl.id\n WHERE o.id IS NULL\n ORDER BY cl.id",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["valeurs-manquantes", "joindre"],
+          piste: "Il s'agit de trouver une absence de ligne : une jointure qui conserve les clients sans correspondance, puis la trace de cette absence.",
+          clause: "LEFT JOIN"
+        },
+        {
+          /* REQUALIFICATION : 8 contre 6, et l'écart n'est pas une erreur. */
+          consigne: "Un collègue objecte qu'un client dont toutes les commandes ont été annulées n'a, en pratique, rien acheté non plus. Donne sur une seule ligne le nombre de clients sans aucune commande valide (une commande valide est une commande non annulée), puis le nombre de clients sans aucune commande du tout.",
+          solution: "SELECT\n  (SELECT COUNT(*) FROM clients cl\n    WHERE NOT EXISTS (SELECT 1 FROM commandes o\n                       WHERE o.client_id = cl.id AND o.statut <> 'annulee')) AS sans_commande_valide,\n  (SELECT COUNT(*) FROM clients cl\n    WHERE NOT EXISTS (SELECT 1 FROM commandes o\n                       WHERE o.client_id = cl.id)) AS sans_aucune_commande",
+          comparer: {},
+          competences: ["sous-requetes", "valeurs-manquantes"],
+          piste: "Les deux nombres répondent à deux questions différentes sur la même table : chacun peut se compter indépendamment, puis se poser côte à côte.",
+          clause: "EXISTS"
+        },
+        {
+          /* DÉICTIQUE : « ta première liste » n'a de référent que le résultat de l'étape 1. */
+          consigne: "L'écart entre ces deux nombres, ce sont les clients que ta première liste avait manqués. Donne-les : identifiant, nom, puis nombre de commandes annulées, par identifiant croissant.",
+          solution: "SELECT cl.id, cl.nom, COUNT(*) AS commandes_annulees\n  FROM clients cl\n  JOIN commandes o ON o.client_id = cl.id\n WHERE NOT EXISTS (SELECT 1 FROM commandes v\n                    WHERE v.client_id = cl.id AND v.statut <> 'annulee')\n GROUP BY cl.id, cl.nom\n ORDER BY cl.id",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["sous-requetes", "joindre", "agreger"],
+          piste: "Ces clients ont des commandes — sinon ils seraient déjà dans la première liste — mais aucune qui compte.",
+          clause: "EXISTS"
+        },
+        {
+          consigne: "Le commercial veut aussi les clients qui ont acheté, puis se sont arrêtés. Pour ceux dont la dernière commande valide est antérieure à 2026, donne l'identifiant, le nom, la date de cette dernière commande valide, puis son rang d'ancienneté (1 pour le plus ancien), du plus ancien au plus récent.",
+          solution: "SELECT cl.id, cl.nom, MAX(o.date_commande) AS derniere,\n       RANK() OVER (ORDER BY MAX(o.date_commande)) AS rang\n  FROM clients cl\n  JOIN commandes o ON o.client_id = cl.id AND o.statut <> 'annulee'\n GROUP BY cl.id, cl.nom\nHAVING MAX(o.date_commande) < '2026-01-01'\n ORDER BY derniere, cl.id",
+          comparer: { ordonne: { cles: [2] } },
+          competences: ["classer-cumuler", "dates", "agreger"],
+          piste: "Le rang se calcule sur la même valeur que celle qui sert à trier, et la condition porte sur un résultat agrégé, pas sur une ligne.",
+          clause: "RANK"
+        },
+        {
+          consigne: "La liste à envoyer, enfin : tous les clients sans aucune commande valide. Donne leur identifiant puis leur nom, par identifiant croissant.",
+          solution: "SELECT cl.id, cl.nom\n  FROM clients cl\n WHERE NOT EXISTS (SELECT 1 FROM commandes o\n                    WHERE o.client_id = cl.id AND o.statut <> 'annulee')\n ORDER BY cl.id",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["sous-requetes", "valeurs-manquantes"],
+          piste: "C'est la définition de l'étape 2, mais on demande les clients eux-mêmes au lieu de les compter.",
+          clause: "EXISTS"
+        }
+      ]
+    },
+
+    /* ══ M4 — six étapes, difficulté 3, sur l'export brut. Requalification : E5 montre qu'une conversion directe
+       des montants donne silencieusement un faux total. Déictique : E5 (« ces montants », « les trois autres »). ══ */
+    {
+      id: "m-export-mardi", titre: "L'export du mardi", difficulte: 3, duree: "30 min", jeu: "export",
+      competences: ["nettoyer-donnees", "agreger", "lire-filtrer"],
+      resume: "Un export jamais nettoyé, et un total à transmettre avant midi. Suppose de savoir nettoyer du texte (TRIM, CAST, REPLACE) et réunir deux tables avec UNION.",
+      contexte: "Mardi matin. Un collègue t'envoie l'export de l'ancien système — deux fichiers de commandes, un par année — et demande « le total des commandes » avant midi pour le comité. Personne n'a jamais vérifié ce fichier.",
+      retenir: "Le total qu'on allait transmettre était 5 042,00 €. Le bon est 6 009,20 € : le nettoyage l'a fait MONTER de 967,20 €, pas descendre. La raison est qu'une conversion directe ne proteste jamais — « 1 250 » devient 1 à cause de l'espace des milliers, « 149,50 » devient 149 à cause de la virgule, et « N/A » devient 0. Sur 32 lignes, 2 sont des doublons entre les deux fichiers, 1 n'a pas de montant chiffrable et 2 sont annulées : il reste 27 commandes. Et 2 passent encore avec un statut que personne ne reconnaît (« en cours » et une chaîne vide), parce qu'aucune contrainte ne l'a jamais interdit.",
+      etapes: [
+        {
+          consigne: "Commence par savoir ce que tu as. Donne sur une seule ligne le nombre de lignes du fichier 2025, celui du fichier 2026, puis le nombre d'identifiants de commande distincts dans les deux fichiers réunis.",
+          solution: "SELECT\n  (SELECT COUNT(*) FROM export_commandes_2025) AS lignes_2025,\n  (SELECT COUNT(*) FROM export_commandes_2026) AS lignes_2026,\n  (SELECT COUNT(DISTINCT id) FROM\n     (SELECT id FROM export_commandes_2025\n       UNION ALL\n      SELECT id FROM export_commandes_2026)) AS identifiants_distincts",
+          comparer: {},
+          competences: ["nettoyer-donnees", "agreger"],
+          piste: "Réunir deux tables sans perdre de ligne et compter des valeurs distinctes sont deux opérations différentes : la première ne doit rien dédoublonner.",
+          clause: "UNION ALL"
+        },
+        {
+          consigne: "Les deux nombres précédents ne concordent pas. Donne les identifiants de commande qui apparaissent plus d'une fois dans les deux fichiers réunis, avec leur nombre d'occurrences, par identifiant croissant.",
+          solution: "SELECT id, COUNT(*) AS occurrences\n  FROM (SELECT id FROM export_commandes_2025\n         UNION ALL\n        SELECT id FROM export_commandes_2026)\n GROUP BY id\nHAVING COUNT(*) > 1\n ORDER BY id",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["nettoyer-donnees", "agreger"],
+          piste: "Un identifiant qui revient se repère en comptant les lignes par identifiant, puis en ne gardant que les groupes de plus d'une ligne.",
+          clause: "HAVING"
+        },
+        {
+          consigne: "Avant de filtrer sur le statut, regarde ce que la colonne contient vraiment. Donne chaque statut tel qu'il est écrit dans les deux fichiers réunis, suivi du nombre de commandes qui le portent, par statut croissant.",
+          solution: "SELECT statut, COUNT(*) AS n\n  FROM (SELECT statut FROM export_commandes_2025\n         UNION ALL\n        SELECT statut FROM export_commandes_2026)\n GROUP BY statut\n ORDER BY statut",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["nettoyer-donnees", "lire-filtrer"],
+          piste: "La consigne dit « tel qu'il est écrit » : ne corrige rien, ne regroupe rien de plus que la valeur brute.",
+          clause: "GROUP BY"
+        },
+        {
+          consigne: "Même méfiance pour les montants. Donne les identifiants dont le montant n'est pas utilisable tel quel — soit qu'il n'exprime aucun nombre, soit qu'il contienne une virgule, soit qu'il contienne une espace — avec le montant tel qu'il est écrit, par identifiant croissant.",
+          solution: "SELECT id, montant\n  FROM (SELECT id, montant FROM export_commandes_2025\n         UNION ALL\n        SELECT id, montant FROM export_commandes_2026)\n WHERE montant IS NULL\n    OR TRIM(montant) IN ('', 'N/A', '--')\n    OR montant LIKE '%,%'\n    OR montant LIKE '% %'\n ORDER BY id",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["nettoyer-donnees", "lire-filtrer"],
+          piste: "Trois défauts distincts se cumulent avec un OU : une valeur qui ne dit rien, une virgule décimale, une espace de milliers. Les deux derniers se cherchent par motif.",
+          clause: "LIKE"
+        },
+        {
+          /* DÉICTIQUE et REQUALIFICATION : « ces montants » renvoie à E4, et le résultat montre qu'une conversion
+             directe donne 1 pour « 1 250 » — donc que tout total calculé sans réparation est faux, en silence. */
+          consigne: "L'un de ces montants n'est pas un nombre du tout ; les trois autres en sont, mal écrits. Pour ces trois-là, donne l'identifiant, le montant tel qu'il est écrit, ce que vaut une conversion directe en nombre, puis ce que vaut la même conversion après avoir retiré les espaces et remplacé la virgule décimale par un point. Par identifiant croissant.",
+          solution: "SELECT id, montant,\n       CAST(TRIM(montant) AS REAL) AS conversion_directe,\n       CAST(REPLACE(REPLACE(TRIM(montant), ' ', ''), ',', '.') AS REAL) AS conversion_reparee\n  FROM (SELECT id, montant FROM export_commandes_2025\n         UNION ALL\n        SELECT id, montant FROM export_commandes_2026)\n WHERE id IN ('5002', '5004', '5027')\n ORDER BY id",
+          comparer: { ordonne: { cles: [0] } },
+          competences: ["nettoyer-donnees"],
+          piste: "Les trois identifiants viennent de l'étape précédente. Les deux conversions se calculent côte à côte dans le même SELECT, sur la même colonne.",
+          clause: "CAST"
+        },
+        {
+          consigne: "Le total que tu peux transmettre, enfin. Ne compte chaque identifiant de commande qu'une fois ; écarte les commandes dont le montant n'est pas chiffrable ; écarte les commandes annulées, quelles que soient la casse et les espaces du statut ; et répare les montants mal écrits. Donne le nombre de commandes retenues, puis leur total.",
+          solution: "SELECT COUNT(*) AS commandes, ROUND(SUM(montant_repare), 2) AS total\n  FROM (SELECT id,\n               MIN(CAST(REPLACE(REPLACE(TRIM(montant), ' ', ''), ',', '.') AS REAL)) AS montant_repare\n          FROM (SELECT id, montant, statut FROM export_commandes_2025\n                 UNION ALL\n                SELECT id, montant, statut FROM export_commandes_2026)\n         WHERE montant IS NOT NULL\n           AND TRIM(montant) NOT IN ('', 'N/A', '--')\n           AND LOWER(TRIM(statut)) <> 'annulee'\n         GROUP BY id)",
+          comparer: {},
+          competences: ["nettoyer-donnees", "agreger"],
+          piste: "Chaque précaution des étapes précédentes devient une condition ou un regroupement : dédoublonner par identifiant est un regroupement, pas un filtre.",
+          clause: "GROUP BY"
+        }
+      ]
+    }
+  ],
 
   /* Contenus installés (Packs, D048) : un seul pack pour l'instant, le contenu principal — toujours proposé actif
      par défaut. Le second pack (jeu sale du palier 5, D027) s'y ajoutera sans rien changer à la mécanique. */

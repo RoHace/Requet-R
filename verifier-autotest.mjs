@@ -215,22 +215,92 @@ function verifierExercice(ex) {
 CONTENU.exercices.filter(ex => !PALIER_FILTRE || ex.niveau === PALIER_FILTRE).forEach(verifierExercice);
 
 /* ══════════════════════════════════════════════════════════════
-   MISSIONS (D048 : une seule forme de validation, le Comparateur)
+   MISSIONS (D048 : une seule forme de validation, le Comparateur ; D069 : forme et portée d'une mission)
+   Le lot 11 a montré qu'une étape passait ici des contrôles que l'application ne tenait pas (`jeu: "export"`
+   validé vert et injouable) et en évitait d'autres qu'un exercice subit (la coupe d'un LIMIT sur des ex æquo).
+   Les deux écarts sont fermés : une étape est soumise aux MÊMES contrôles SQL qu'un exercice `requete`.
    ══════════════════════════════════════════════════════════════ */
+
+/** Les solutions des exercices, à l'espace près : une étape de mission ne doit jamais redemander MOT POUR MOT
+ *  ce qu'un exercice demande déjà (D069). Une étape peut légitimement remettre en situation une notion déjà
+ *  exercée — c'est le propre d'une mise en situation —, mais pas en recopier la requête. */
+const normaliserSQL = s => String(s).replace(/\s+/g, " ").trim().toLowerCase();
+const solutionsExercices = new Map();
+CONTENU.exercices.forEach(ex => {
+  const sql = ex.solution || ex.requete;
+  if (sql) solutionsExercices.set(normaliserSQL(sql), ex.id);
+});
+
+const ETAPES_MINIMUM = 3;
 
 for (const mission of CONTENU.missions) {
   const probleme = [];
   proteger(() => {
     if (idsConnus.has(mission.id)) probleme.push("identifiant en double (exercice, mission ou chapitre)");
     idsConnus.add(mission.id);
+
+    /* ── Forme de la mission (D069) ── */
+    if (!Array.isArray(mission.etapes) || mission.etapes.length === 0) {
+      probleme.push("aucune étape");
+    } else if (mission.etapes.length < ETAPES_MINIMUM) {
+      /* Deux raisons qui se rejoignent : le critère de conception demande au moins une étape qui requalifie un
+         résultat précédent (donc deux pour établir, une pour requalifier), et en dessous de trois étapes la
+         formule d'XP de Classe'R, versée une fois, dépasserait une série de même longueur (D069). */
+      probleme.push(`${mission.etapes.length} étape(s) : une mission en porte au moins ${ETAPES_MINIMUM} (D069)`);
+    }
+    if (!Array.isArray(mission.competences) || !mission.competences.length)
+      probleme.push("« competences » manquant : une mission traverse des compétences, c'est sa raison d'être");
     (mission.competences || []).forEach(c => {
       if (!CONTENU.competences.some(k => k.id === c)) probleme.push(`compétence inconnue : ${c}`);
     });
+    if (![1, 2, 3].includes(mission.difficulte))
+      probleme.push(`« difficulte » doit valoir 1, 2 ou 3 (reçu ${JSON.stringify(mission.difficulte)})`);
+    if (!mission.resume || !String(mission.resume).trim())
+      probleme.push("« resume » manquant : c'est lui qui annonce ce que la mission suppose acquis (D069)");
+    if (!mission.duree || !String(mission.duree).trim())
+      probleme.push("« duree » manquante : la carte l'affiche, et savoir si on en a pour 10 ou 30 minutes décide de commencer");
+    if (!mission.contexte || !String(mission.contexte).trim())
+      probleme.push("« contexte » manquant : une mission sans situation d'entreprise n'est qu'une série d'exercices");
+    if (!mission.retenir || !String(mission.retenir).trim())
+      probleme.push("« retenir » manquant : sans lui la mission n'a aucun endroit pour dire ce qu'elle a enseigné (D069)");
+    if (mission.jeu !== undefined && !JEUX.some(j => j.id === mission.jeu))
+      probleme.push(`jeu de données inconnu : ${mission.jeu}`);
+
+    /* ── Chaque étape, aux mêmes contrôles SQL qu'un exercice `requete` ── */
     (mission.etapes || []).forEach((etape, i) => {
       const p = [];
-      surLeJeuDe({ jeu: etape.jeu || mission.jeu });
-      const jeu = verifierSQLReference(etape.solution, etape, p);
-      if (jeu) verifierRienValideAvance(jeu, etape.comparer, p);
+      if (etape.jeu !== undefined && !JEUX.some(j => j.id === etape.jeu)) {
+        /* Contrôlé AVANT d'appeler seedDe, qui jetterait : un jeu mal orthographié doit donner un message,
+           pas une exception (défaut relevé au lot 11). */
+        p.push(`jeu de données inconnu : ${etape.jeu}`);
+        probleme.push(`étape ${i + 1} — ${p.join(" ; ")}`);
+        return;
+      }
+      if (!etape.consigne || !String(etape.consigne).trim()) p.push("« consigne » manquante");
+      if (!etape.solution || !String(etape.solution).trim()) p.push("« solution » manquante");
+      (etape.competences || []).forEach(c => {
+        if (!CONTENU.competences.some(k => k.id === c)) p.push(`compétence inconnue : ${c}`);
+      });
+
+      /* Indices gradués, comme pour un exercice : au moins un indice avant la solution révélée. Sans cela le
+         seul indice d'une étape EST sa solution, et le bouton l'offre d'emblée — l'échelle n'existe pas. */
+      const indices = Indices.pour(etape);
+      if (indices.length < 2) p.push("indices incomplets : au moins un indice est attendu avant la solution révélée");
+      else if (!indices[indices.length - 1].revele) p.push("les indices ne se terminent pas par la solution révélée");
+      if (etape.clause && !CLAUSES[etape.clause]) p.push(`clause inconnue de CLAUSES : ${etape.clause}`);
+
+      if (etape.solution) {
+        const jumeau = solutionsExercices.get(normaliserSQL(etape.solution));
+        if (jumeau) p.push(`solution identique à celle de l'exercice ${jumeau} : une mission remet en situation, elle ne recopie pas (D069)`);
+
+        surLeJeuDe({ jeu: etape.jeu || mission.jeu });
+        const jeu = verifierSQLReference(etape.solution, etape, p);
+        /* D029 : la coupe d'un LIMIT final ne doit pas tomber au milieu d'un groupe d'ex æquo. Appliqué aux
+           exercices depuis le lot 5, il manquait aux étapes — alors qu'une mission finit souvent par un
+           classement et que le seed porte des ex æquo partout (P5). */
+        verifierCoupeLimit(etape.solution, etape.comparer && etape.comparer.ordonne, p);
+        if (jeu) verifierRienValideAvance(jeu, etape.comparer, p);
+      }
       if (p.length) probleme.push(`étape ${i + 1} — ${p.join(" ; ")}`);
     });
   }, probleme);

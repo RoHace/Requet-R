@@ -302,33 +302,79 @@ const Parcours = {
   quitter() { Parcours.courant = null; }
 };
 
-/* ── Mission (D048) : la mécanique (étapes, étoiles selon les indices, brouillon et reprise), une seule forme de
-   validation — chaque étape se vérifie comme un exercice `requete` (Comparateur), jamais par un validateur de
-   feuille de calcul. Aucune mission n'existe encore (CONTENU.missions est vide) : testée en lot 4 avec une
-   définition de test (verifier-progression.mjs), jouée pour de vrai à partir du lot où son contenu arrive. ──── */
+/* ── Mission (D048, corrigée au lot 11 par D069) : la mécanique (étapes, étoiles selon les indices, brouillon et
+   reprise), une seule forme de validation — chaque étape se vérifie comme un exercice `requete` (Comparateur),
+   jamais par un validateur de feuille de calcul. Le lot 11 a exercé cette mécanique avec des missions factices
+   AVANT d'écrire la moindre mission (règle de D068) : sept défauts en sont sortis, tous corrigés ici, chacun
+   couvert par un critère de verifier-progression.mjs (MI-08 à MI-14). ──────────────────────────────────────── */
 const Mission = (() => {
   const cache = new Map();
+
+  /** Le jeu de données d'une étape : le sien, sinon celui de la mission, sinon la boutique (D068).
+   *  Même convention que l'Autotest (`etape.jeu || mission.jeu`), pour qu'un contenu validé vert soit jouable. */
+  const porteurJeu = (def, etape) => ({ jeu: (etape && etape.jeu) || (def && def.jeu) });
+
+  /** Les compétences créditées par une étape : les siennes, sinon celles de la mission (D069).
+   *  Une étape est un exercice du point de vue de la progression, comme elle l'est déjà de sa validation. */
+  const competencesDe = (def, etape) =>
+    (etape && Array.isArray(etape.competences) && etape.competences.length) ? etape.competences : (def.competences || []);
+
   function resultatEtape(def, etape) {
     const cle = `${def.id}:${def.etapes.indexOf(etape)}`;
     if (!cache.has(cle)) {
-      const r = Moteur.executerIsole(etape.solution, { plafond: false });
+      /* Le jeu de l'étape, pas le seed principal en dur : sans cela une étape « jeu: export » calculait sa
+         référence sur la boutique et partait en exception non rattrapée (défaut relevé au lot 11). */
+      const r = Moteur.executerIsole(etape.solution, { seed: seedDe(porteurJeu(def, etape)), plafond: false });
       if (r.erreur) throw new Error(`l'étape de la mission ${def.id} est mal écrite : ${r.erreur}`);
       cache.set(cle, r.jeux[r.jeux.length - 1]);
     }
     return cache.get(cle);
   }
 
+  /** Avancement d'une mission EN COURS : étape, brouillon, indices consommés, solution éventuellement révélée.
+   *  Les indices sont persistés (D069) : sans eux, quitter puis reprendre remettait le compteur à zéro et les
+   *  trois étoiles se regagnaient après avoir affiché toutes les solutions.
+   *  Une mission déjà `terminee` n'est JAMAIS réécrite : sinon quitter son bilan y reposait une `etape`, et la
+   *  relancer repartait de sa dernière étape — une seule requête suffisait à la « refaire ». */
+  function enregistrerAvancement(m) {
+    Store.modifier(e => {
+      const precedent = e.missions[m.def.id] || {};
+      if (precedent.statut === "terminee") return;
+      e.missions[m.def.id] = {
+        ...precedent, statut: "encours",
+        etape: m.etape, brouillon: m.brouillon,
+        indicesTotal: m.indicesTotal, solutionRevelee: !!m.solutionRevelee
+      };
+    });
+  }
+
   const API = {
     courante: null,
+    porteurJeu,
+    competencesDe,
 
     demarrer(id) {
       const def = CONTENU.missions.find(m => m.id === id);
       if (!def) return false;
+      /* Une mission sans étape ne doit pas partir en exception dans Indices.pour (étape `undefined`) :
+         l'écran restait figé sans rien dire. C'est une erreur d'auteur, et c'est l'Autotest qui la refuse
+         (une mission en porte au moins trois, D069) : ce garde-fou n'existe que pour qu'une définition
+         malformée dégrade en silence au lieu de jeter. `console.warn` et non un Toast, pour la même raison
+         que `Store.charger` : le message s'adresse à l'auteur, pas à l'apprenant, qui n'en peut rien. */
+      if (!Array.isArray(def.etapes) || !def.etapes.length) {
+        console.warn(`Mission ${def.id} : aucune étape, impossible de la démarrer.`);
+        return false;
+      }
       const sauvegarde = Store.etat.missions[id];
+      /* Seule une mission EN COURS reprend où elle en était ; une mission terminée qu'on relance repart de
+         l'étape 1, sans indice, et garde son palmarès (D069). */
+      const reprise = sauvegarde && sauvegarde.statut === "encours" ? sauvegarde : null;
       API.courante = {
-        def, etape: Math.min((sauvegarde && sauvegarde.etape) || 0, def.etapes.length - 1),
-        indices: 0, indicesTotal: 0, etoiles: 0, certifs: [], etat: "encours", retour: null,
-        brouillon: (sauvegarde && sauvegarde.brouillon) || ""
+        def, etape: Math.min((reprise && reprise.etape) || 0, def.etapes.length - 1),
+        indices: 0, indicesTotal: (reprise && reprise.indicesTotal) || 0,
+        solutionRevelee: !!(reprise && reprise.solutionRevelee),
+        etoiles: 0, certifs: [], etat: "encours", retour: null,
+        brouillon: (reprise && reprise.brouillon) || ""
       };
       return true;
     },
@@ -338,39 +384,98 @@ const Mission = (() => {
     sauvegarderBrouillon(texte) {
       const m = API.courante; if (!m) return;
       m.brouillon = texte;
-      Store.modifier(e => {
-        const precedent = e.missions[m.def.id] || {};
-        e.missions[m.def.id] = { ...precedent, etape: m.etape, brouillon: texte, statut: precedent.statut || "encours" };
-      });
+      enregistrerAvancement(m);
     },
 
     /** Une seule forme de validation, quelle que soit l'étape : la requête de l'apprenant contre celle de
-     *  référence de l'étape, par le même Comparateur qu'un exercice `requete` (D048). */
+     *  référence de l'étape, par le même Comparateur qu'un exercice `requete` (D048) — et sur le jeu de données
+     *  de l'étape (D068). Une étape réussie crédite ses compétences comme un exercice (D069) ; l'XP et les
+     *  étoiles restent portées par la fin de mission. */
     verifier(sql) {
       const m = API.courante, etape = API.etapeCourante();
-      const res = Comparateur.evaluer({ attendu: resultatEtape(m.def, etape), rapport: Moteur.executerIsole(sql), options: etape.comparer || {}, sql, base: CONTENU.base });
+      const res = Comparateur.evaluer({
+        attendu: resultatEtape(m.def, etape),
+        rapport: Moteur.executerIsole(sql, { seed: seedDe(porteurJeu(m.def, etape)) }),
+        options: etape.comparer || {}, sql, base: CONTENU.base
+      });
       m.retour = res;
       if (!res.reussi) return res;
+      /* Crédit de maîtrise de l'étape : mêmes formules qu'un exercice (Indices.facteurMaitrise, D046), et AUCUNE
+         XP ici — elle est versée une seule fois, au bilan, pour qu'une mission ne vaille jamais plus qu'une
+         série de même longueur (D069). Les certifications déclenchées en route sont gardées pour le bilan. */
+      const liste = Indices.pour(etape);
+      m.certifs = m.certifs.concat(Progression.enregistrerResultat({
+        competences: competencesDe(m.def, etape), reussi: true,
+        difficulte: m.def.difficulte || 1, xp: 0,
+        facteur: Indices.facteurMaitrise(m.indices, liste)
+      }));
       m.indices = 0;
       if (m.etape < m.def.etapes.length - 1) { m.etape++; API.sauvegarderBrouillon(""); }
       else API.terminer();
       return res;
     },
 
-    indice() { if (API.courante) { API.courante.indices++; API.courante.indicesTotal++; } },
+    /** Un indice de plus sur l'étape courante. `liste` (le `Indices.pour` de l'étape) sert à reconnaître la
+     *  solution révélée, qui coûte comme pour un exercice (D046) : XP annulée, facteur de maîtrise plafonné. */
+    indice(liste) {
+      const m = API.courante; if (!m) return;
+      if (Array.isArray(liste) && liste[m.indices] && liste[m.indices].revele) m.solutionRevelee = true;
+      m.indices++; m.indicesTotal++;
+      enregistrerAvancement(m);
+    },
 
     terminer() {
       const m = API.courante, def = m.def;
       m.etoiles = m.indicesTotal === 0 ? 3 : m.indicesTotal <= 2 ? 2 : 1;
-      const facteur = Math.max(0.3, 1 - 0.1 * m.indicesTotal);
-      m.xp = Math.round(30 * (def.difficulte || 1) * facteur);
-      m.certifs = Progression.enregistrerResultat({ competences: def.competences || [], reussi: true, difficulte: def.difficulte || 1, xp: m.xp, facteur, idMission: def.id });
-      Store.modifier(e => { e.missions[def.id] = { statut: "terminee", etoiles: m.etoiles, indicesUtilises: m.indicesTotal, meilleurScore: m.etoiles }; });
+      /* Formule de Classe'R sur le nombre d'indices (D048), avec le durcissement de D069 : une solution révélée
+         sur une seule étape annule l'XP et plafonne le facteur, comme D046 le fait pour un exercice — sinon
+         afficher la solution de chaque étape laissait encore 2 étoiles et une maîtrise créditée à 0,9. */
+      const facteur = m.solutionRevelee ? 0.2 : Math.max(0.3, 1 - 0.1 * m.indicesTotal);
+      m.xp = m.solutionRevelee ? 0 : Math.round(30 * (def.difficulte || 1) * facteur);
+      /* L'ORDRE COMPTE : les quatre certifications de mission (D044) lisent Store.etat.missions. Le statut
+         « terminee » doit donc être écrit AVANT verifierCertifications, sinon elles ne tombent jamais au bilan
+         et arrivent plus tard, sur un exercice sans rapport. Le défaut est HÉRITÉ de Classe'R, qui appelle
+         lui aussi `enregistrerResultat` avant son `Store.modifier` (`Reference/classer-v2.html:8543-8556`)
+         pour les mêmes quatre conditions : le portage fidèle l'a recopié, et seul du contenu réel l'a montré.
+         `etoiles` est le MEILLEUR passage, comme chez Classe'R (`Math.max(enr.etoiles || 0, m.etoiles)`,
+         ligne 8553) — le portage en avait fait le dernier passage, si bien qu'un second essai moins bon
+         dégradait le palmarès. `meilleurScore` (champ propre à Requêt'R) est tenu à la même valeur. */
+      Store.modifier(e => {
+        const precedent = e.missions[def.id] || {};
+        const meilleur = Math.max(m.etoiles, precedent.etoiles || 0, precedent.meilleurScore || 0);
+        e.missions[def.id] = {
+          statut: "terminee", etoiles: meilleur, indicesUtilises: m.indicesTotal,
+          meilleurScore: meilleur, termineeLe: new Date().toISOString()
+        };
+      });
+      /* `competences: []` : la maîtrise a déjà été créditée étape par étape (D069) ; ce dernier appel ne porte
+         que l'XP, la série du jour et les certifications. */
+      m.certifs = m.certifs.concat(Progression.enregistrerResultat({
+        competences: [], reussi: true, difficulte: def.difficulte || 1, xp: m.xp, facteur, idMission: def.id
+      }));
       m.etat = "bilan";
     },
 
-    recommencer(id) { Store.modifier(e => { delete e.missions[id]; }); cache.clear(); return API.demarrer(id); },
-    quitter() { if (API.courante) API.sauvegarderBrouillon(API.courante.brouillon); API.courante = null; }
+    /** Refaire une mission : on repart de l'étape 1 sans indice, SANS effacer le palmarès — le `delete` d'avant
+     *  faisait perdre les étoiles déjà gagnées dès qu'on abandonnait la reprise, et laissait un état incohérent
+     *  avec la certification « Maître d'œuvre », déjà obtenue et jamais retirée (D044).
+     *  Conséquence assumée (D069) : une mission terminée qu'on refait n'est pas reprenable — son avancement
+     *  n'est pas sauvé, pour ne pas écraser à moitié le palmarès qu'on vient justement de conserver. */
+    recommencer(id) {
+      Store.modifier(e => {
+        const precedent = e.missions[id];
+        if (precedent && precedent.statut === "terminee")
+          e.missions[id] = {
+            statut: "terminee", etoiles: precedent.etoiles, indicesUtilises: precedent.indicesUtilises,
+            meilleurScore: precedent.meilleurScore || precedent.etoiles
+          };
+        else delete e.missions[id];
+      });
+      cache.clear();
+      return API.demarrer(id);
+    },
+
+    quitter() { if (API.courante) enregistrerAvancement(API.courante); API.courante = null; }
   };
   return API;
 })();
@@ -897,15 +1002,46 @@ function pageFiche(nom) {
 
 Vues.fiche = () => pageFiche(null);
 
+/** Étoiles d'une mission, portées de Classe'R (`Reference/classer-v2.html:9459`) : trois `★` dont les `n`
+ *  premières portent `.pleine`. Le portage du lot 4 écrivait `"★".repeat(n) + "☆".repeat(3 - n)` en texte brut,
+ *  qui n'active jamais `.etoiles .pleine` — les étoiles gagnées restaient grises au lieu de prendre `--etoile`
+ *  (D063 : la feuille de style est reprise telle quelle, ses crochets doivent donc être utilisés). */
+function etoiles(n) {
+  return el("span.etoiles", { title: `${n} étoile(s) sur 3` },
+    [1, 2, 3].map(i => el("span", { class: i <= n ? "pleine" : "" }, "★")));
+}
+
 function listeMissions(rafraichir) {
   return el("div", {},
-    el("header.entete", {}, el("div.entete__sur", {}, "Missions"), el("h1", {}, "Missions")),
+    el("header.entete", {}, el("div.entete__sur", {}, "Missions"), el("h1", {}, "Missions"),
+      /* Pourquoi aucune mission n'est jouable au palier 1 (D069) : une mission traverse plusieurs compétences,
+         elle ne peut donc pas se bâtir sur une seule table. Le dire vaut mieux que quatre cartes muettes.
+         Classe'R a la même phrase d'accueil à cet endroit (`classer-v2.html:9470`), adaptée au SQL. */
+      CONTENU.missions.length
+        ? el("p", {}, "Un contexte d'entreprise, une suite d'étapes, et une question qui n'est pas encore tranchée : ce qu'une étape révèle change parfois le sens de la précédente. Chaque étape se vérifie comme un exercice. Les missions traversent plusieurs compétences et supposent les jointures acquises.")
+        : null),
     CONTENU.missions.length
       ? el("div.pile", {}, CONTENU.missions.map(m => {
-          const enr = Store.etat.missions[m.id];
+          const p = Store.etat.missions[m.id] || null;
+          const termine = p && p.statut === "terminee";
+          const noms = (m.competences || []).map(id => {
+            const c = CONTENU.competences.find(k => k.id === id);
+            return c && c.nom;
+          }).filter(Boolean);
+          const etapes = (m.etapes || []).length;
           return el("button.carte.carte--action", { type: "button", onclick: () => { if (Mission.demarrer(m.id)) rafraichir(); } },
-            el("div.carte__entete", {}, el("h3", {}, m.titre), enr && enr.statut === "terminee" ? el("span.etoiles", {}, "★".repeat(enr.etoiles) + "☆".repeat(3 - enr.etoiles)) : el("span.puce.puce--accent", {}, "Démarrer")),
-            el("p.muet", {}, m.resume || ""));
+            el("div.carte__entete", {}, el("h3", {}, m.titre),
+              /* Distinction Commencer / Reprendre (dette D057/D058, levée au lot 11) : portée telle quelle de
+                 Classe'R (`classer-v2.html:9490`), mêmes classes — `.puce--ambre` pour une reprise. */
+              termine ? etoiles(p.etoiles || p.meilleurScore || 0)
+                      : el("span.puce" + (p ? ".puce--ambre" : ".puce--accent"), {}, p ? "Reprendre" : "Commencer")),
+            el("p.muet", {}, m.resume || ""),
+            el("div.exo__meta", { style: "margin-top:11px;margin-bottom:0" },
+              noms.map(n => el("span.puce", {}, n)),
+              puceDifficulte(m.difficulte || 1),
+              el("span.tres-muet.mono", { style: "font-size:11.5px" },
+                `${etapes} étape${etapes > 1 ? "s" : ""}${m.duree ? " · " + m.duree : ""}`
+                + (p && p.statut === "encours" ? ` · reprise à l'étape ${(p.etape || 0) + 1}` : ""))));
         }))
       : el("div.vide", {}, el("div.vide__boite", {},
           el("h3", {}, "Aucune mission pour l'instant"),
@@ -914,18 +1050,26 @@ function listeMissions(rafraichir) {
 
 function ecranMission(rafraichir) {
   const m = Mission.courante, etape = Mission.etapeCourante();
+  /* La base VIVANTE doit porter le jeu de données de l'étape, sinon « Exécuter » travaillerait sur l'autre jeu
+     et « Vérifier » partait en exception non rattrapée (D068, défaut relevé au lot 11). Même forme que
+     `rendreQuestion` : on ne reconstruit que si le jeu change, donc rien ne bouge sur la boutique. */
+  const porteur = Mission.porteurJeu(m.def, etape);
+  if (Moteur.etat.jeu !== jeuDe(porteur)) nouvelleBase(seedDe(porteur));
   const sortie = el("div.resultat", { "aria-live": "polite" });
   const retourZone = el("div");
   const editeur = editeurSQL({
     valeur: m.brouillon || "", etiquette: "Requête de l'étape",
     surChange: v => Mission.sauvegarderBrouillon(v),
-    surExecuter: () => { sortie.replaceChildren(...blocsExecution(Moteur.executer(editeur.valeur()))); },
+    surExecuter: () => lancer(),
     surVerifier: () => verifier()
   });
+  function lancer() { sortie.replaceChildren(...blocsExecution(Moteur.executer(editeur.valeur()))); }
   // D057 (audit) : les indices existaient côté Mission (`indice()`, `terminer()` compte `indicesTotal` pour les
   // étoiles) sans jamais être affichés. `avancer` fait passer chaque clic par `Mission.indice()` plutôt que par
   // l'incrémentation directe que fait panneauIndices pour un exercice (Session/Parcours), afin que indicesTotal suive.
-  const panneau = panneauIndices(etape, m, () => Mission.indice());
+  // D069 : la liste est passée à `indice()`, qui doit reconnaître la solution révélée pour en faire payer le prix.
+  const liste = Indices.pour(etape);
+  const panneau = panneauIndices(etape, m, () => Mission.indice(liste));
   function verifier() {
     const res = Mission.verifier(editeur.valeur());
     retourZone.replaceChildren(carteRetour({ type: "requete" }, res, {}));
@@ -933,32 +1077,48 @@ function ecranMission(rafraichir) {
     else if (res.reussi) { editeur.definir(""); rafraichir(); }
   }
   return el("div", {},
-    el("header.entete", {}, el("h1", {}, m.def.titre)),
+    el("header.entete", {}, el("div.entete__sur", {}, "Mission"), el("h1", {}, m.def.titre)),
+    /* Le contexte d'entreprise est rendu à CHAQUE étape (D069) : une mission dont les étapes se tiennent est
+       justement celle où perdre le brief après l'étape 1 coûte le plus cher. */
+    m.def.contexte ? el("div.contexte.contexte--brief", {}, el("b", {}, "La situation"), el("p", {}, m.def.contexte)) : null,
     el("div.contexte", {}, el("b", {}, `Étape ${m.etape + 1} / ${m.def.etapes.length}`), el("p", {}, etape.consigne)),
     editeur.element,
     el("div.sql-barre", {},
-      el("button.btn", { type: "button", onclick: () => { sortie.replaceChildren(...blocsExecution(Moteur.executer(editeur.valeur()))); } }, "Exécuter"),
-      el("button.btn.btn--fort", { type: "button", onclick: verifier }, "Vérifier")),
+      el("button.btn", { type: "button", onclick: lancer }, "Exécuter"),
+      el("button.btn.btn--fort", { type: "button", onclick: verifier }, "Vérifier"),
+      el("span.tres-muet.sql-aide", {}, "Ctrl + Entrée exécute · Ctrl + Maj + Entrée vérifie"),
+      el("span.sql-barre__espace"),
+      /* Une étape peut écrire sur la base vivante par « Exécuter » (le verdict, lui, reste isolé — D032) :
+         sans ce bouton, rien ne permettait de réparer la base sans quitter la mission. Même libellé et même
+         place que sur un exercice (`rendreSQL`, src/exercices.js). */
+      el("button.btn.btn--nu", { type: "button", onclick: () => { const ms = nouvelleBase(seedDe(porteur)); sortie.replaceChildren(); Toast.afficher(`Base reconstruite en ${ms} ms.`, "accent"); } }, "Réinitialiser la base")),
     sortie, retourZone, panneau,
     el("button.btn.btn--nu", { type: "button", onclick: () => { Mission.quitter(); rafraichir(); } }, "Quitter la mission"));
 }
 
 /** Bilan de fin de mission (D057, audit) : `Mission.terminer()` calcule étoiles/XP/certifications depuis le lot 4
  *  et pose `etat: "bilan"`, mais rien ne le lisait — `ecranMission` continuait de s'afficher, sans rien de tout
- *  cela. Modèle : `ecranBilan` (série libre) pour les certifications, `listeMissions` pour les étoiles (`★`/`☆`,
- *  déjà en usage) ; pas de détail par compétence avant/après comme Classe'R (`bilanMission`), faute d'un
- *  équivalent de `avantSession`/`avantChapitre` côté Mission — à ajouter si besoin, pas dans ce correctif. */
+ *  cela. Modèle : `ecranBilan` (série libre) pour les certifications, `etoiles()` pour les étoiles ; pas de
+ *  détail par compétence avant/après comme Classe'R (`bilanMission`), faute d'un équivalent de
+ *  `avantSession`/`avantChapitre` côté Mission — à ajouter si besoin, pas dans ce correctif.
+ *  D069 : `retenir` y est rendu, sur le modèle du « À retenir » d'une série (`ecranBilan`). Sans lui, une
+ *  mission n'avait aucun endroit pour dire ce qu'elle venait d'enseigner, et c'est là qu'elle l'enseigne.
+ *  Les étoiles montrées sont celles du passage qui vient d'avoir lieu ; la liste, elle, montre le meilleur. */
 function ecranMissionBilan(rafraichir) {
   const m = Mission.courante, def = m.def;
   return el("div", {},
     el("div.bilan-hero", {},
       el("div.entete__sur", {}, "Mission terminée"),
-      el("span.etoiles", { role: "img", "aria-label": `${m.etoiles} étoile(s) sur 3` }, "★".repeat(m.etoiles) + "☆".repeat(3 - m.etoiles)),
+      el("span.etoiles.etoiles--grandes", { role: "img", "data-frais": "1", "aria-label": `${m.etoiles} étoile(s) sur 3` },
+        [1, 2, 3].map(i => el("span", { class: i <= m.etoiles ? "pleine" : "", style: `--i:${i - 1}` }, "★"))),
       el("h1", {}, def.titre),
       el("div.bilan-hero__chiffres", {},
         el("div.bilan-hero__chiffre", {}, el("b", {}, `+${m.xp}`), el("span", {}, "XP gagnés")),
         el("div.bilan-hero__chiffre", {}, el("b", {}, `${def.etapes.length}`), el("span", {}, def.etapes.length > 1 ? "étapes franchies" : "étape franchie")),
         m.indicesTotal ? el("div.bilan-hero__chiffre", {}, el("b", {}, String(m.indicesTotal)), el("span", {}, m.indicesTotal > 1 ? "indices utilisés" : "indice utilisé")) : null)),
+    def.retenir ? el("div.section", {},
+      el("div.section__titre", {}, el("h2", {}, "À retenir")),
+      el("div.carte", {}, el("p.resume__ligne", {}, def.retenir))) : null,
     m.certifs.length ? el("div.section", {},
       el("div.section__titre", {}, el("h2", {}, "Certifications obtenues")),
       el("div.certifs", {}, m.certifs.map(c => el("div.certif", { "data-obtenue": "1" }, el("span.certif__ico", {}, c.ico), el("b", {}, c.nom), el("span", {}, c.desc))))) : null,
