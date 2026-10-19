@@ -1979,6 +1979,573 @@ const CONTENU = {
       exemple: "FROM clients c JOIN clients p ON p.id = c.parrain_id : c.nom est le filleul, p.nom le parrain.",
       explication: "Les deux exemplaires de la table sont indiscernables tant qu'on ne les nomme pas : écrire nom ne voudrait rien dire, et ON id = parrain_id serait ambigu des deux côtés. Les alias créent la distinction qui manque — c est le filleul, p le parrain — et c'est elle, pas la syntaxe, qui porte le sens de la requête. Les alias ne changent rien à la façon dont SQLite lit la table, et ne remplacent jamais le ON : la condition de correspondance reste indispensable.",
       retenir: "Dans une auto-jointure, les alias ne sont plus un confort mais la seule chose qui distingue les deux rôles joués par la même table."
+    },
+    /* ── Palier 4 : raisonner — sous-requêtes (dont corrélées), CTE, fonctions de fenêtre, top-N par groupe, cumuls (lot 9) ── */
+    {
+      id: "p4-01", type: "qcm",
+      niveau: "P4", competence: "sous-requetes", categorie: "Comprendre", difficulte: 1,
+      titre: "Une requête à l'intérieur d'une autre",
+      question: "Dans WHERE prix > (SELECT AVG(prix) FROM produits), que fait SQLite avec la partie entre parenthèses ?",
+      options: [
+        "Il l'exécute d'abord, obtient une seule valeur, puis compare chaque prix à cette valeur",
+        "Il l'ignore : seule la comparaison prix > ... compte",
+        "Il exécute les deux requêtes en même temps et fusionne leurs résultats",
+        "Il refuse : une sous-requête n'est autorisée qu'après FROM"
+      ],
+      reponse: 0,
+      piste: "Une sous-requête entre parenthèses se comporte, pour le reste de la ligne, comme si elle avait déjà été remplacée par le nombre qu'elle renvoie.",
+      clause: "WHERE",
+      exemple: "(SELECT COUNT(*) FROM clients) renvoie un seul nombre, 40 : WHERE ... > (SELECT COUNT(*) FROM clients) le compare donc à 40, comme on écrirait > 40 à la main.",
+      explication: "SQLite exécute d'abord la sous-requête, entièrement, et obtient ici une seule valeur (le prix moyen des produits). Cette valeur remplace ensuite la sous-requête dans la ligne principale, exactement comme si elle avait été écrite en dur. Deux temps, toujours dans cet ordre : d'abord la sous-requête, ensuite la requête qui l'utilise — jamais l'inverse, et jamais en même temps.",
+      retenir: "Une sous-requête qui renvoie une seule valeur peut être utilisée partout où une valeur simple serait acceptée : SQLite l'exécute d'abord, puis s'en sert comme d'un nombre ordinaire."
+    },
+    {
+      id: "p4-02", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Plus cher que la moyenne",
+      question: "Affichez les produits dont le prix dépasse le prix moyen de TOUS les produits.",
+      consigne: "Trois colonnes, dans cet ordre : id, nom, prix. Triés par prix décroissant.",
+      solution: "SELECT id, nom, prix FROM produits WHERE prix > (SELECT AVG(prix) FROM produits) ORDER BY prix DESC",
+      comparer: { ordonne: { cles: [2] } },
+      piste: "(SELECT AVG(prix) FROM produits) renvoie un seul nombre : comparez prix à ce nombre comme vous le feriez avec une valeur écrite en dur.",
+      clause: "WHERE",
+      exemple: "WHERE note > (SELECT AVG(note) FROM commandes) garderait les commandes dont la note dépasse la note moyenne.",
+      explication: "La sous-requête (SELECT AVG(prix) FROM produits) calcule 165,31 € sur les 30 produits, une seule fois. Le WHERE compare ensuite chaque prix à cette valeur unique. Six produits la dépassent : les deux à 1 299,00 € (101, 109), les deux à 449,00 € (102, 103), puis 120 (429,00 €) et 115 (349,00 €).",
+      retenir: "Une sous-requête qui renvoie une seule valeur peut servir de borne dans un WHERE, exactement comme un nombre écrit en dur — sauf qu'elle reste juste si les données changent."
+    },
+    {
+      id: "p4-03", type: "predire",
+      niveau: "P4", competence: "sous-requetes", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Le reste de la liste",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (30 produits en tout, 6 dépassent la moyenne)",
+      requete: "SELECT COUNT(*) FROM produits WHERE prix <= (SELECT AVG(prix) FROM produits);",
+      predit: "valeur",
+      piste: "Combien de produits dépassaient la moyenne à l'exercice précédent ? Les autres sont forcément ici.",
+      clause: "WHERE",
+      exemple: "Sur 10 lignes, si 3 vérifient une condition, les 7 autres vérifient forcément son contraire.",
+      explication: "30 produits en tout, 6 dépassent la moyenne (exercice précédent) : les 24 restants sont à la moyenne ou en dessous. <= inclut l'égalité, mais aucun produit ne vaut exactement 165,31 €, donc ce sont bien les 24 produits strictement sous la moyenne.",
+      retenir: "Une condition et son contraire se partagent toujours le total des lignes : connaître l'un des deux comptes donne l'autre par simple soustraction."
+    },
+    {
+      id: "p4-04", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les clients qui ont acheté un jouet",
+      question: "Affichez les clients qui ont commandé au moins un produit de la catégorie Jouets (categorie_id = 6).",
+      consigne: "Trois colonnes, dans cet ordre : id, prenom, nom. Triés par id croissant.",
+      solution: "SELECT c.id, c.prenom, c.nom FROM clients c WHERE c.id IN (SELECT o.client_id FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE l.produit_id IN (SELECT id FROM produits WHERE categorie_id = 6)) ORDER BY c.id",
+      comparer: { ordonne: true },
+      piste: "La sous-requête la plus intérieure donne les id des produits Jouets ; la suivante, les client_id qui en ont commandé un ; IN garde alors les clients dont l'id est dans cette liste.",
+      clause: "IN",
+      exemple: "WHERE id IN (SELECT client_id FROM commandes) garderait les clients qui ont passé au moins une commande, quelle qu'elle soit.",
+      explication: "Trois sous-requêtes s'enchaînent, chacune donnant une liste à la suivante : les deux produits de la catégorie Jouets (129, 130), puis les commandes qui en contiennent un, puis leurs clients. IN garde alors, dans la table clients, les lignes dont l'id figure dans cette dernière liste : 220, 230, 234, 237.",
+      retenir: "IN accepte une sous-requête qui renvoie PLUSIEURS valeurs, contrairement à =, qui n'en accepte qu'une seule à la fois."
+    },
+    {
+      id: "p4-05", type: "predire",
+      niveau: "P4", competence: "sous-requetes", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Les clients qui n'ont pas acheté CE produit",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (40 clients en tout, 3 ont commandé le produit 101)",
+      requete: "SELECT COUNT(*) FROM clients WHERE id NOT IN (SELECT o.client_id FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE l.produit_id = 101);",
+      predit: "valeur",
+      piste: "Si 3 clients l'ont commandé, les autres ne l'ont pas.",
+      clause: "NOT IN",
+      exemple: "Sur les 40 clients, si 4 ont acheté un Jouet (exercice précédent), les 36 autres n'en ont acheté aucun.",
+      explication: "La sous-requête donne les client_id ayant commandé le produit 101 : 3 clients. NOT IN garde alors tous les AUTRES clients, soit 40 − 3 = 37. Cette sous-requête ne contient ici aucun NULL (client_id n'est jamais vide dans commandes) : NOT IN se comporte normalement. Le chapitre suivant montre ce qui se passe quand ce n'est plus le cas.",
+      retenir: "NOT IN fonctionne sans surprise tant que la sous-requête ne peut renvoyer aucun NULL. Vérifier cela avant de l'utiliser évite le piège du chapitre suivant."
+    },
+    {
+      id: "p4-06", type: "qcm",
+      niveau: "P4", competence: "sous-requetes", categorie: "Comprendre", difficulte: 2,
+      titre: "Pourquoi IN accepte plusieurs valeurs",
+      question: "produit_id = 129 fonctionne pour UN produit. Pourquoi produit_id IN (129, 130) fonctionne-t-il pour deux produits, alors que produit_id = (129, 130) serait refusé ?",
+      options: [
+        "IN compare la colonne à CHAQUE valeur de la liste et garde la ligne si l'une d'elles correspond ; = ne compare qu'à une seule valeur à la fois",
+        "IN est réservé aux sous-requêtes, = aux valeurs écrites à la main",
+        "= fonctionnerait aussi, mais serait plus lent",
+        "IN renvoie la ligne qui correspond à la MOYENNE des valeurs de la liste"
+      ],
+      reponse: 0,
+      piste: "= attend une seule valeur de chaque côté ; une liste entre parenthèses n'est pas une valeur, elle en contient plusieurs.",
+      clause: "IN",
+      exemple: "statut IN ('livree', 'expediee') garde les commandes dont le statut vaut l'un OU l'autre, ce qu'un seul = ne pourrait pas exprimer.",
+      explication: "= teste une égalité entre deux valeurs uniques : il ne sait rien faire d'une liste. IN, lui, est conçu pour une liste — écrite à la main entre parenthèses ou renvoyée par une sous-requête — et garde la ligne dès que la colonne correspond à L'UNE de ces valeurs. C'est pour cela qu'une sous-requête utilisée avec IN peut renvoyer plusieurs lignes sans problème, alors qu'une sous-requête utilisée avec = ne doit jamais en renvoyer plus d'une.",
+      retenir: "IN teste une appartenance à une liste ; = teste une égalité entre deux valeurs uniques. C'est pour cela qu'une sous-requête utilisée avec IN peut renvoyer plusieurs lignes."
+    },
+    {
+      id: "p4-07", type: "predire",
+      niveau: "P4", competence: "sous-requetes", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Zéro ligne, et ce n'est pas une erreur de votre part",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ?",
+      requete: "SELECT id FROM clients WHERE id NOT IN (SELECT parrain_id FROM clients);",
+      predit: "nbLignes",
+      zeroLigneAttendu: "Le piège enseigné par cet exercice est justement que cette requête, pourtant syntaxiquement correcte, renvoie 0 ligne — alors que 31 clients n'ont jamais parrainé personne.",
+      pieges: ["P9"],
+      piste: "parrain_id est vide pour 31 clients sur 40. Que devient une sous-requête qui renvoie, parmi ses valeurs, un seul NULL ?",
+      clause: "NOT IN",
+      exemple: "1 NOT IN (2, NULL, 4) ne renvoie ni vrai ni faux : SQLite ne peut pas garantir que 1 soit absent d'une liste dont une valeur est inconnue, et traite tout le test comme inconnu — donc jamais vrai.",
+      explication: "La sous-requête (SELECT parrain_id FROM clients) renvoie 40 valeurs : 9 identifiants, et 31 NULL (les clients venus sans parrain). Dès qu'UN SEUL NULL se trouve dans cette liste, NOT IN ne peut plus répondre « vrai » pour AUCUNE ligne : comparer un identifiant à un NULL ne donne jamais ni vrai ni faux, seulement « inconnu », et SQL traite un résultat inconnu comme s'il n'était pas vrai. Le résultat est donc 0, pour toutes les lignes, sans le moindre message d'erreur.",
+      retenir: "NOT IN (SELECT ...) renvoie 0 ligne dès que la sous-requête contient un seul NULL, quelles que soient les autres valeurs. C'est l'erreur de sous-requête la plus coûteuse en entreprise, justement parce qu'elle ne plante jamais."
+    },
+    {
+      id: "p4-08", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Qui n'a jamais parrainé personne, sans ce piège",
+      question: "Affichez les clients qui n'ont jamais parrainé personne.",
+      consigne: "Une colonne : id. Triés par id croissant.",
+      solution: "SELECT id FROM clients c WHERE NOT EXISTS (SELECT 1 FROM clients f WHERE f.parrain_id = c.id) ORDER BY id",
+      comparer: { ordonne: true },
+      pieges: ["P9"],
+      piste: "NOT EXISTS (SELECT 1 FROM clients f WHERE f.parrain_id = c.id) teste : existe-t-il un filleul dont le parrain est c ? NOT EXISTS garde les clients pour qui la réponse est non.",
+      clause: "EXISTS",
+      exemple: "EXISTS (SELECT 1 FROM commandes o WHERE o.client_id = c.id) teste si un client a au moins une commande, sans jamais regarder combien ni lesquelles.",
+      explication: "NOT EXISTS ne construit aucune liste de valeurs à comparer : pour chaque client c, il teste directement s'il existe une ligne de clients dont parrain_id vaut l'id de c. Cette question a toujours une réponse, oui ou non, même quand parrain_id est NULL ailleurs dans la table — NULL n'intervient ici que comme une valeur de filleul PARMI D'AUTRES, jamais comme la réponse elle-même. Le résultat retrouve les 31 clients attendus.",
+      retenir: "NOT EXISTS répond à la même question que NOT IN, mais en testant une existence plutôt qu'une appartenance à une liste : un NULL ailleurs dans la table ne peut jamais fausser ce test."
+    },
+    {
+      id: "p4-09", type: "corriger",
+      niveau: "P4", competence: "sous-requetes", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Le correctif qui ne corrige rien",
+      question: "Affichez les clients qui n'ont jamais parrainé personne.",
+      consigne: "Une colonne : id. Triés par id croissant.",
+      depart: "SELECT id FROM clients WHERE id NOT IN (SELECT parrain_id FROM clients) ORDER BY id",
+      solution: "SELECT id FROM clients c WHERE NOT EXISTS (SELECT 1 FROM clients f WHERE f.parrain_id = c.id) ORDER BY id",
+      comparer: { ordonne: true },
+      pieges: ["P9"],
+      piste: "Le NOT IN n'est pas en panne : il répond correctement à une question étrange, « existe-t-il un NULL dans la liste ? », pas à celle qu'on lui pose. Changez d'outil plutôt que de réparer celui-ci.",
+      clause: "EXISTS",
+      exemple: "Remplacer NOT IN par NOT EXISTS change la question posée : non plus « l'id est-il absent de cette liste de valeurs ? » mais « existe-t-il une ligne qui correspond ? » — cette seconde question n'a jamais besoin d'écarter un NULL, elle n'en contient simplement pas.",
+      explication: "Le départ s'exécute sans erreur et renvoie 0 ligne : rien ne signale qu'il est faux, puisque 0 est un résultat parfaitement valide pour une requête SQL. Le problème n'est pas une faute de syntaxe mais un choix d'outil : NOT IN construit une liste de valeurs et doit s'assurer qu'aucune n'y figure, ce qu'un seul NULL rend impossible à garantir. NOT EXISTS pose une question différente — une ligne correspondante existe-t-elle ? — qui a toujours une réponse, retrouvant les 31 clients attendus.",
+      retenir: "Un départ qui renvoie 0 ligne SANS message d'erreur n'est pas forcément vide pour une bonne raison : vérifiez toujours si NOT IN porte sur une colonne qui peut contenir NULL avant de lui faire confiance."
+    },
+    {
+      id: "p4-10", type: "predire",
+      niveau: "P4", competence: "sous-requetes", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "IN n'a pas le même problème",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (parrain_id contient 9 identifiants et 31 NULL)",
+      requete: "SELECT COUNT(*) FROM clients WHERE id IN (SELECT parrain_id FROM clients);",
+      predit: "valeur",
+      piste: "IN cherche une correspondance ; un NULL dans la liste ne peut pas en être une, mais il n'empêche pas non plus les vraies correspondances d'être trouvées.",
+      clause: "IN",
+      exemple: "Parmi (2, NULL, 4), chercher 2 avec IN trouve une correspondance franche, sans se soucier du NULL présent ailleurs dans la liste.",
+      explication: "La sous-requête renvoie 9 identifiants et 31 NULL. IN compare chaque id de clients à cette liste et garde la ligne dès qu'UNE correspondance EXACTE est trouvée : les 31 NULL ne gênent jamais une correspondance qui existe réellement ailleurs dans la liste. Le résultat est donc bien 9, les 9 clients qui ont au moins un filleul. NOT IN, lui, a besoin de garantir qu'AUCUNE valeur de la liste ne correspond — et un NULL rend cette garantie impossible, exactement le résultat vide obtenu juste avant avec NOT IN.",
+      retenir: "Un NULL dans une sous-requête gêne NOT IN, qui doit écarter TOUTES les valeurs, mais jamais IN, qui n'a besoin d'en trouver qu'UNE."
+    },
+    {
+      id: "p4-11", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Au-dessus de sa propre moyenne",
+      question: "Pour le client 201, affichez les commandes dont le montant des produits dépasse la moyenne des commandes DE CE CLIENT.",
+      consigne: "Une colonne : id de la commande. Triés par id croissant.",
+      solution: "SELECT o.id FROM commandes o WHERE o.client_id = 201 AND (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) > (SELECT AVG(m.total) FROM (SELECT SUM(l2.quantite*l2.prix_unitaire) AS total FROM commandes o2 JOIN lignes_commande l2 ON l2.commande_id = o2.id WHERE o2.client_id = o.client_id GROUP BY o2.id) AS m) ORDER BY o.id",
+      comparer: { ordonne: true },
+      piste: "La seconde sous-requête recalcule la moyenne des commandes DU MÊME client (o.client_id) : elle ne regarde jamais les commandes des 39 autres clients.",
+      clause: "WHERE",
+      exemple: "Toujours pour le client 201 : la moyenne de ses 5 commandes vaut 781,50 € — un chiffre recalculé spécifiquement pour lui, pas pour toute la boutique.",
+      explication: "Le client 201 a 5 commandes, pour 1 284,00 €, 542,50 €, 1 299,00 €, 206,50 € et 575,50 € de produits. Leur moyenne vaut 781,50 €. Deux commandes la dépassent : 1001 (1 284,00 €) et 1019 (1 299,00 €). La sous-requête qui calcule cette moyenne contient o.client_id : elle recalcule donc une moyenne DIFFÉRENTE pour chaque client, alors qu'une sous-requête ordinaire ne s'exécute qu'une seule fois. C'est ce qu'on appelle une sous-requête corrélée : elle se réexécute pour chaque ligne de la requête extérieure, en fonction de cette ligne.",
+      retenir: "Une sous-requête corrélée contient une référence à la ligne de la requête extérieure (ici o.client_id) : elle ne calcule plus UNE valeur pour toute la table, mais une valeur DIFFÉRENTE pour chaque ligne."
+    },
+    {
+      id: "p4-12", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 3,
+      titre: "La même comparaison, pour chaque client",
+      question: "Pour CHAQUE client, affichez les commandes dont le montant des produits dépasse la moyenne des commandes de ce client.",
+      consigne: "Une colonne : id de la commande. Triés par id croissant.",
+      solution: "SELECT o.id FROM commandes o WHERE (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) > (SELECT AVG(m.total) FROM (SELECT SUM(l2.quantite*l2.prix_unitaire) AS total FROM commandes o2 JOIN lignes_commande l2 ON l2.commande_id = o2.id WHERE o2.client_id = o.client_id GROUP BY o2.id) AS m) ORDER BY o.id",
+      comparer: { ordonne: true },
+      piste: "Reprenez l'exercice précédent et retirez simplement la condition qui limitait au client 201 : la corrélation o.client_id fait le reste, pour chacun des clients.",
+      clause: "WHERE",
+      exemple: "La même requête, exécutée pour le client 202, recalculerait sa propre moyenne — différente de celle de 201 — sans qu'il soit nécessaire de rien changer à l'écriture de la requête.",
+      explication: "Rien ne change dans la logique : SQLite réexécute la sous-requête corrélée pour chaque commande, en recalculant à chaque fois la moyenne du client concerné. Sur les 70 commandes de la boutique, 28 dépassent ainsi la moyenne de LEUR PROPRE client — un nombre bien différent de celui qu'on obtiendrait en les comparant tous à une seule moyenne globale, ce que montre l'exercice suivant.",
+      retenir: "Une sous-requête corrélée, une fois écrite pour un cas particulier, se généralise à toute la table sans rien changer d'autre que la condition qui limitait ce cas : c'est elle qui fait tout le travail, ligne par ligne."
+    },
+    {
+      id: "p4-13", type: "corriger",
+      niveau: "P4", competence: "sous-requetes", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "La moyenne de qui ?",
+      question: "Pour chaque client, affichez les commandes dont le montant des produits dépasse la moyenne des commandes de ce client.",
+      consigne: "Une colonne : id de la commande. Triés par id croissant.",
+      depart: "SELECT o.id FROM commandes o WHERE (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) > (SELECT AVG(m.total) FROM (SELECT SUM(l2.quantite*l2.prix_unitaire) AS total FROM commandes o2 JOIN lignes_commande l2 ON l2.commande_id = o2.id GROUP BY o2.id) AS m) ORDER BY o.id",
+      solution: "SELECT o.id FROM commandes o WHERE (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) > (SELECT AVG(m.total) FROM (SELECT SUM(l2.quantite*l2.prix_unitaire) AS total FROM commandes o2 JOIN lignes_commande l2 ON l2.commande_id = o2.id WHERE o2.client_id = o.client_id GROUP BY o2.id) AS m) ORDER BY o.id",
+      comparer: { ordonne: true },
+      piste: "La sous-requête qui calcule la moyenne ne contient aucune référence à o : elle calcule donc la MÊME moyenne, une seule fois, pour toutes les commandes de la boutique.",
+      clause: "WHERE",
+      exemple: "231,91 € est la moyenne de TOUTES les commandes de la boutique ; 781,50 € est celle des seules commandes du client 201. Comparer une commande à l'une ou à l'autre ne donne pas la même réponse.",
+      explication: "Le départ ressemble exactement à la bonne requête, à une différence près : la sous-requête qui calcule la moyenne (le WHERE o2.client_id = o.client_id manquant) n'est plus corrélée. Elle calcule UNE SEULE moyenne, pour TOUTES les commandes de la boutique (231,91 €), et compare chaque commande à ce chiffre unique plutôt qu'à la moyenne de son propre client. Le résultat passe de 28 commandes (au-dessus de la moyenne de leur client) à 16 (au-dessus de la moyenne de la boutique entière) — un nombre tout aussi plausible, qui ne signale rien de faux.",
+      retenir: "Oublier la condition qui corrèle une sous-requête à la ligne extérieure ne provoque aucune erreur : la sous-requête s'exécute, renvoie une valeur plausible, et répond simplement à une AUTRE question que celle posée."
+    },
+    {
+      id: "p4-14", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 3,
+      titre: "La dernière commande de chaque client",
+      question: "Pour chaque client qui a commandé, affichez sa commande la plus récente.",
+      consigne: "Deux colonnes, dans cet ordre : id du client, date de la commande. Triées par id du client croissant.",
+      solution: "SELECT o.client_id, o.date_commande FROM commandes o WHERE o.date_commande = (SELECT MAX(o2.date_commande) FROM commandes o2 WHERE o2.client_id = o.client_id) ORDER BY o.client_id",
+      comparer: { ordonne: true },
+      piste: "(SELECT MAX(o2.date_commande) FROM commandes o2 WHERE o2.client_id = o.client_id) recalcule, pour CHAQUE commande, la date la plus récente DE SON CLIENT. La ligne extérieure est gardée quand sa propre date atteint ce maximum.",
+      clause: "WHERE",
+      exemple: "Pour le client 201, cette sous-requête renvoie 2025-12-24 : la commande 1043, qui porte cette date, est donc la seule gardée pour lui.",
+      explication: "La sous-requête est corrélée par o2.client_id = o.client_id : elle calcule, pour chaque commande, la date maximale parmi les commandes DU MÊME client. La condition du WHERE compare ensuite la date de CETTE commande à ce maximum : elle n'est vraie que pour la commande la plus récente de chaque client. Le résultat compte 34 lignes, une par client qui a déjà commandé — aucun des 40 clients n'a deux commandes passées exactement le même jour, donc aucune ambiguïté ne se glisse ici.",
+      retenir: "MAX(colonne) dans une sous-requête corrélée, comparé à la colonne elle-même, retrouve la ligne qui porte ce maximum : une façon courante d'obtenir « le plus récent », « le plus grand » ou « le dernier » PAR groupe, sans GROUP BY ni fonction de fenêtre."
+    },
+    {
+      id: "p4-15", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Nommer une étape : le chiffre d'affaires produits",
+      question: "Calculez le chiffre d'affaires PRODUITS de la boutique (hors frais de port), en excluant les commandes annulées ou retournées.",
+      consigne: "Une seule valeur.",
+      solution: "WITH par_commande AS (SELECT l.commande_id, SUM(l.quantite*l.prix_unitaire) AS montant FROM lignes_commande l GROUP BY l.commande_id) SELECT SUM(c.montant) FROM par_commande c JOIN commandes o ON o.id = c.commande_id WHERE o.statut NOT IN ('annulee', 'retournee')",
+      comparer: {},
+      piste: "WITH par_commande AS (...) calcule, une fois pour toutes, le montant de chaque commande avant de la joindre : la jointure qui suit ne voit plus qu'UNE ligne par commande, jamais une par produit.",
+      clause: "WITH",
+      exemple: "WITH ca_client AS (SELECT client_id, SUM(...) AS total FROM ... GROUP BY client_id) SELECT * FROM ca_client WHERE total > 1000; nomme un calcul intermédiaire pour pouvoir le filtrer ensuite, comme une table ordinaire.",
+      explication: "La CTE par_commande calcule d'abord, pour chaque commande, la somme de ses lignes de produits — exactement comme au palier 3, mais nommée et réutilisable. La requête principale la joint ensuite à commandes pour exclure les statuts annulee et retournee, puis additionne : 12 387,00 €. Aucune ligne de lignes_commande n'est jointe directement à commandes dans la requête principale : la jointure qui pourrait gonfler un total a déjà eu lieu, une fois, À L'INTÉRIEUR de la CTE.",
+      retenir: "Une CTE peut porter une agrégation ENTIÈRE avant qu'une jointure n'ait lieu : le reste de la requête ne voit plus que son résultat déjà résumé, une ligne par groupe."
+    },
+    {
+      id: "p4-16", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 2,
+      titre: "La même étape, augmentée des frais de port",
+      question: "Calculez le chiffre d'affaires TOTAL de la boutique (produits ET frais de port), en excluant les commandes annulées ou retournées — en une seule requête.",
+      consigne: "Une seule valeur.",
+      solution: "WITH par_commande AS (SELECT l.commande_id, SUM(l.quantite*l.prix_unitaire) AS montant FROM lignes_commande l GROUP BY l.commande_id) SELECT SUM(c.montant + o.frais_port) FROM par_commande c JOIN commandes o ON o.id = c.commande_id WHERE o.statut NOT IN ('annulee', 'retournee')",
+      comparer: {},
+      piste: "o.frais_port vient directement de commandes, une seule fois par ligne jointe — et la CTE garantit qu'il y a exactement une ligne par commande, jamais une par produit.",
+      clause: "WITH",
+      exemple: "Sans la CTE, joindre lignes_commande à commandes puis sommer frais_port compterait ces frais une fois PAR LIGNE DE PRODUIT, pas une fois par commande.",
+      explication: "Le palier précédent avait dû calculer séparément les 12 387,00 € de produits et les 232,00 € de frais de port, faute de pouvoir les additionner sans gonfler ce second total par une jointure directe. La CTE résout exactement ce problème : par_commande ne contient qu'UNE ligne par commande, donc la joindre à commandes et y ajouter frais_port ne répète ce montant qu'une seule fois par commande, jamais par ligne de produit. Le résultat, 12 619,00 €, est le chiffre d'affaires total en une seule requête.",
+      retenir: "Agréger AVANT de joindre, grâce à une CTE, évite le gonflement d'une colonne qui appartient à la table « une seule ligne » : c'est la même précaution qu'au palier 3, rendue possible ici par une étape nommée plutôt que par l'absence de jointure."
+    },
+    {
+      id: "p4-17", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le même calcul, sans la CTE",
+      question: "Calculez le chiffre d'affaires total en joignant directement lignes_commande à commandes et en sommant quantite*prix_unitaire + frais_port, SANS passer par une étape intermédiaire.",
+      consigne: "Une seule valeur.",
+      solution: "SELECT SUM(l.quantite*l.prix_unitaire + o.frais_port) FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee')",
+      comparer: {},
+      piste: "Chaque commande à plusieurs lignes de produits va faire réapparaître frais_port plusieurs fois dans cette somme.",
+      clause: "JOIN",
+      exemple: "La commande 1038 a 4 lignes : ses frais de port, 6,50 €, seront additionnés 4 fois dans cette version, au lieu d'une seule.",
+      explication: "Cette requête est la version la plus directe qu'on puisse écrire, et elle s'exécute sans la moindre erreur : 12 911,50 €. C'est pourtant un résultat gonflé — 292,50 € de trop par rapport aux 12 619,00 € de l'exercice précédent — exactement le piège du palier 3 : frais_port appartient à la commande entière, mais la jointure le recopie sur chacune de ses lignes, et SUM l'additionne alors une fois par ligne plutôt qu'une fois par commande. La CTE des deux exercices précédents n'ajoutait donc pas seulement de la lisibilité : elle évitait structurellement ce gonflement, en agrégeant avant de joindre.",
+      retenir: "Le gonflement d'un SUM après une jointure n'est pas propre aux jointures ordinaires : il réapparaît à l'identique dès qu'une CTE qui agrège avant de joindre est retirée. C'est la raison structurelle, pas seulement stylistique, d'écrire cette étape à part."
+    },
+    {
+      id: "p4-18", type: "requete",
+      niveau: "P4", competence: "sous-requetes", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le chiffre d'affaires, mais par client",
+      question: "Affichez les clients dont le chiffre d'affaires produits (hors commandes annulées ou retournées) dépasse 1 000 €.",
+      consigne: "Deux colonnes, dans cet ordre : id du client, chiffre d'affaires. Triés par chiffre d'affaires décroissant.",
+      solution: "WITH par_client AS (SELECT o.client_id, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY o.client_id) SELECT client_id, ca FROM par_client WHERE ca > 1000 ORDER BY ca DESC",
+      comparer: { ordonne: { cles: [1] } },
+      piste: "La CTE regroupe déjà par client avant le filtre : le WHERE de la requête principale porte alors sur une colonne ordinaire, ca, pas sur un agrégat qu'il faudrait écrire dans un HAVING.",
+      clause: "WITH",
+      exemple: "Une fois nommée par_client, cette étape se filtre, se trie ou se rejoint comme n'importe quelle table : WHERE ca > 1000 plutôt que HAVING SUM(...) > 1000.",
+      explication: "La CTE par_client calcule le chiffre d'affaires produits de chaque client, en excluant les commandes annulées ou retournées. La requête principale n'a plus qu'à filtrer cette colonne déjà calculée : quatre clients dépassent 1 000 € — 201 (3 907,50 €), 202 (1 604,00 €), et 220 et 229, à égalité à 1 357,00 €. Cette égalité n'est pas un accident de cet exercice : le chapitre suivant montre ce qu'elle devient dès qu'on lui donne un rang.",
+      retenir: "Une fois qu'une CTE a nommé une agrégation, la requête principale peut la filtrer avec un WHERE ordinaire : plus besoin du HAVING réservé aux agrégats non nommés."
+    },
+    {
+      id: "p4-19", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 1,
+      titre: "Garder la ligne, et ajouter une colonne",
+      question: "Pour chaque commande, affichez son identifiant, l'identifiant du client, et le nombre total de commandes de ce client — sans regrouper les lignes.",
+      consigne: "Trois colonnes, dans cet ordre : id de la commande, client_id, nombre de commandes du client. Triées par id de commande croissant.",
+      solution: "SELECT id, client_id, COUNT(*) OVER (PARTITION BY client_id) AS nb FROM commandes ORDER BY id",
+      comparer: { ordonne: true },
+      piste: "COUNT(*) OVER (PARTITION BY client_id) compte les commandes DE CHAQUE CLIENT, mais sans fusionner les lignes : chaque commande garde sa propre place.",
+      clause: "OVER",
+      exemple: "SUM(quantite) OVER (PARTITION BY commande_id) ajouterait, sur chaque ligne de lignes_commande, la quantité totale de SA commande — sans réduire le nombre de lignes de lignes_commande.",
+      explication: "Le résultat compte 70 lignes, une par commande — exactement comme la table commandes elle-même. OVER (PARTITION BY client_id) n'a rien réduit : il a seulement ajouté, sur chaque ligne, le nombre de commandes du client à qui elle appartient. La commande 1001 du client 201 affiche donc 5 (le nombre total de commandes de 201), et les quatre autres commandes de 201 affichent le même 5.",
+      retenir: "Une fonction de fenêtre garde toutes les lignes de départ ; elle ne fait qu'y ajouter une colonne calculée sur le groupe de chacune."
+    },
+    {
+      id: "p4-20", type: "predire",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Prédire le résultat", difficulte: 1,
+      titre: "Et si on groupait vraiment ?",
+      question: "Sans l'exécuter : combien de LIGNES cette requête renvoie-t-elle ?",
+      requete: "SELECT client_id, COUNT(*) FROM commandes GROUP BY client_id;",
+      predit: "nbLignes",
+      piste: "Cette fois, c'est un GROUP BY, pas un OVER : relisez ce que le chapitre vient de montrer sur la différence entre les deux.",
+      clause: "GROUP BY",
+      exemple: "L'exercice précédent, avec OVER (PARTITION BY client_id), gardait les 70 lignes de commandes.",
+      explication: "GROUP BY fusionne les lignes qui partagent le même client_id : une seule ligne subsiste par client. Sur les 40 clients de la boutique, seuls ceux qui ont déjà commandé apparaissent dans commandes : 34 d'entre eux. Le résultat compte donc 34 lignes, bien loin des 70 de la version OVER de l'exercice précédent, pour un calcul pourtant très proche.",
+      retenir: "GROUP BY et OVER (PARTITION BY ...) peuvent calculer le même agrégat, mais jamais sur le même nombre de lignes : l'un réduit, l'autre jamais."
+    },
+    {
+      id: "p4-21", type: "qcm",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Comprendre", difficulte: 2,
+      titre: "Reconnaître une fonction de fenêtre",
+      question: "Laquelle de ces affirmations décrit correctement une fonction de fenêtre (OVER) ?",
+      options: [
+        "Elle calcule un agrégat par groupe, comme GROUP BY, mais sans réduire le nombre de lignes du résultat",
+        "Elle remplace GROUP BY dans toutes les situations, en étant simplement plus rapide",
+        "Elle ne peut s'utiliser que sur des colonnes de type date",
+        "Elle regroupe les lignes comme GROUP BY, mais seulement si elles sont déjà triées"
+      ],
+      reponse: 0,
+      piste: "Le nombre de lignes du résultat est le test le plus sûr : cherchez ce qui distingue vraiment les deux, pas ce qui les rapproche.",
+      clause: "PARTITION BY",
+      exemple: "Sur les 70 lignes de commandes, GROUP BY client_id en donne 34 ; OVER (PARTITION BY client_id) en garde 70.",
+      explication: "Une fonction de fenêtre et GROUP BY peuvent calculer exactement le même agrégat (un compte, une somme, une moyenne), par le même découpage en groupes (PARTITION BY jouant le rôle de GROUP BY). Leur seule différence, mais elle est totale, porte sur ce qu'il advient des lignes : GROUP BY les fusionne, une fonction de fenêtre les garde toutes et leur ajoute simplement la valeur calculée.",
+      retenir: "Ni la vitesse, ni le type de colonne, ni un tri préalable ne distinguent GROUP BY d'une fonction de fenêtre : seul le nombre de lignes du résultat le fait."
+    },
+    {
+      id: "p4-22", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Classer sans égalité, pour commencer",
+      question: "Pour le client 201, classez ses commandes par montant de produits décroissant, avec leur rang.",
+      consigne: "Deux colonnes, dans cet ordre : id de la commande, rang (RANK). Triées par rang croissant.",
+      solution: "SELECT o.id, RANK() OVER (ORDER BY (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) DESC) AS rang FROM commandes o WHERE o.client_id = 201 ORDER BY rang",
+      comparer: { ordonne: true },
+      piste: "RANK() OVER (ORDER BY ...) s'écrit après le SELECT, comme un agrégat ordinaire — mais l'ORDER BY, ici, est à L'INTÉRIEUR des parenthèses de OVER, pas à la fin de la requête.",
+      clause: "RANK",
+      exemple: "RANK() OVER (ORDER BY note DESC) donnerait un rang à chaque commande selon sa note, la meilleure recevant le rang 1.",
+      explication: "Les 5 commandes du client 201 ont des montants tous différents (1 299,00 €, 1 284,00 €, 575,50 €, 542,50 €, 206,50 €) : aucune égalité ne se présente encore. RANK() OVER (ORDER BY ... DESC) attribue donc simplement 1, 2, 3, 4, 5, dans l'ordre décroissant du montant — exactement ce qu'un ROW_NUMBER aurait donné aussi. La différence entre les deux n'apparaît que devant une égalité, ce que l'exercice suivant va provoquer.",
+      retenir: "RANK() OVER (ORDER BY ...) s'écrit une fois pour toutes ; c'est l'ORDER BY À L'INTÉRIEUR des parenthèses qui décide du classement, pas celui de la fin de la requête."
+    },
+    {
+      id: "p4-23", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Un rang, trois façons de le compter",
+      question: "Pour les produits de la catégorie Informatique (categorie_id = 1), affichez l'identifiant et le prix, puis trois rangs calculés sur ce même prix décroissant : avec ROW_NUMBER, avec RANK, et avec DENSE_RANK.",
+      consigne: "Cinq colonnes, dans cet ordre : id, prix, le rang ROW_NUMBER, le rang RANK, le rang DENSE_RANK. Triées par prix décroissant, puis par id croissant. Pour ROW_NUMBER, départagez les prix égaux par id croissant ; RANK et DENSE_RANK, eux, se basent sur le prix seul, sans cette clé de départage.",
+      solution: "SELECT id, prix, ROW_NUMBER() OVER (ORDER BY prix DESC, id) AS rang_ligne, RANK() OVER (ORDER BY prix DESC) AS rang, DENSE_RANK() OVER (ORDER BY prix DESC) AS rang_dense FROM produits WHERE categorie_id = 1 ORDER BY prix DESC, id",
+      comparer: { ordonne: true },
+      pieges: ["P5"],
+      piste: "Les trois fonctions s'écrivent de la même façon (nomFonction() OVER (ORDER BY ...)) mais ne traitent pas pareil un prix égal : comparez leurs trois colonnes sur les lignes 102 et 103.",
+      clause: "RANK",
+      exemple: "RANK() OVER (ORDER BY note DESC) classerait les clients par note décroissante, en donnant le même rang à deux notes égales.",
+      explication: "101 (1 299,00 €) reçoit le rang 1 partout : aucune égalité ne le concerne. 102 et 103 sont à égalité à 449,00 € : ROW_NUMBER, qui n'admet aucune égalité, les numérote 2 et 3 (départagés par l'id, comme demandé) ; RANK et DENSE_RANK, eux, leur donnent le MÊME rang 2 — c'est tout l'intérêt d'un rang face à un simple numéro de ligne. La différence entre RANK et DENSE_RANK se voit ensuite, sur 104 (79,00 €) : RANK compte les LIGNES déjà classées avant lui (101, 102, 103, soit 3) et passe donc à 4 ; DENSE_RANK compte les VALEURS de prix distinctes déjà vues (1 299,00 € et 449,00 €, soit 2) et passe à 3, sans jamais sauter de numéro.",
+      retenir: "ROW_NUMBER numérote sans jamais d'égalité, au prix d'un choix arbitraire sur les prix égaux. RANK et DENSE_RANK respectent l'égalité, mais pas de la même façon : RANK laisse un trou après un ex æquo (1, 2, 2, 4), DENSE_RANK n'en laisse jamais (1, 2, 2, 3)."
+    },
+    {
+      id: "p4-24", type: "predire",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Le rang après une égalité, chez les clients",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (le classement des clients par chiffre d'affaires produits place 201 au rang 1, 202 au rang 2, puis 220 et 229 à égalité au rang 3)",
+      requete: "WITH par_client AS (SELECT o.client_id, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY o.client_id) SELECT RANK() OVER (ORDER BY ca DESC) AS rang FROM par_client WHERE client_id = 205;",
+      predit: "valeur",
+      pieges: ["P5"],
+      piste: "201, 202, 220 et 229 occupent déjà 4 rangs (1, 2, 3 et 3). Combien de lignes RANK a-t-il dû compter avant celle de 205 ?",
+      clause: "RANK",
+      exemple: "Exercice précédent : après 101 (rang 1) et 102/103 (rang 2 à deux), le produit suivant reçoit le rang 4 — RANK compte les LIGNES déjà classées, pas les valeurs distinctes.",
+      explication: "201 occupe seul le rang 1, 202 seul le rang 2, puis 220 et 229 se partagent le rang 3 : quatre clients sont déjà classés avant que 205 n'arrive. RANK attribue au client suivant un rang égal au nombre de lignes qui le précèdent, plus un : 4 + 1 = 5. Comme à l'exercice précédent, ce rang 5 marque que deux places (3 et 4) ont été consommées par l'égalité.",
+      retenir: "Après un groupe de n lignes à égalité sur un même rang, RANK attribue au suivant un rang égal au nombre total de lignes déjà vues, plus un — jamais le rang qui suit immédiatement dans la numérotation naturelle."
+    },
+    {
+      id: "p4-25", type: "corriger",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "LIMIT 4, et pourtant 5 lignes qui comptent",
+      question: "Affichez les 4 produits les plus vendus en quantité (hors commandes annulées), avec leur quantité.",
+      consigne: "Deux colonnes, dans cet ordre : id du produit, quantité vendue. Triées par quantité décroissante.",
+      depart: "SELECT l.produit_id, SUM(l.quantite) AS qte FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY l.produit_id ORDER BY qte DESC LIMIT 4",
+      solution: "WITH v AS (SELECT l.produit_id, SUM(l.quantite) AS qte FROM lignes_commande l JOIN commandes o ON o.id = l.commande_id WHERE o.statut <> 'annulee' GROUP BY l.produit_id) SELECT produit_id, qte FROM (SELECT produit_id, qte, RANK() OVER (ORDER BY qte DESC) AS rg FROM v) WHERE rg <= 4 ORDER BY qte DESC",
+      comparer: { ordonne: { cles: [1] } },
+      pieges: ["P5"],
+      piste: "LIMIT coupe après exactement 4 lignes, quel que soit ce qui se passe au 4e rang. RANK, lui, peut répondre : « rang 4 » peut être partagé par plus d'une ligne.",
+      clause: "RANK",
+      exemple: "Exercice précédent : le rang 2 des prix de la catégorie Informatique est partagé par 102 et 103 — un LIMIT 2 sur ce même classement en couperait un des deux au hasard.",
+      explication: "Le départ trie par quantité décroissante et s'arrête après 4 lignes : 113 (21), 107 (14), 108 (12), puis UN SEUL des deux produits à égalité à 10 (126 et 128) — lequel, cela dépend de l'ordre dans lequel SQLite les a rencontrés, pas d'un mérite réel. La solution remplace ce LIMIT par un rang : RANK() OVER (ORDER BY qte DESC) donne 1, 2, 3, 4, 4 à ces cinq produits, et WHERE rg <= 4 les garde TOUS LES CINQ, parce que 126 et 128 partagent vraiment le 4e rang. « Les 4 produits les plus vendus » renvoie alors 5 lignes — et c'est la bonne réponse.",
+      retenir: "Un LIMIT fixe peut couper au milieu d'une égalité sans le signaler ; un rang filtré par WHERE rang <= n la respecte, même si cela veut dire renvoyer plus de n lignes."
+    },
+    {
+      id: "p4-26", type: "qcm",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Comprendre", difficulte: 1,
+      titre: "PARTITION BY, en une phrase",
+      question: "Dans ROW_NUMBER() OVER (PARTITION BY categorie_id ORDER BY prix DESC), à quoi sert PARTITION BY ?",
+      options: [
+        "Il redémarre le classement à 1 pour chaque catégorie, au lieu de classer tous les produits ensemble",
+        "Il trie les catégories par ordre alphabétique avant de les afficher",
+        "Il limite le résultat à une seule catégorie",
+        "Il regroupe les catégories en une seule ligne, comme GROUP BY"
+      ],
+      reponse: 0,
+      piste: "Sans PARTITION BY, ROW_NUMBER classerait les 30 produits ensemble, toutes catégories confondues.",
+      clause: "PARTITION BY",
+      exemple: "ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY date_commande) numéroterait les commandes de CHAQUE client à partir de 1, sans mélanger les numéros d'un client à l'autre.",
+      explication: "PARTITION BY découpe les lignes en groupes, exactement comme GROUP BY le ferait — mais au lieu de fusionner chaque groupe en une seule ligne, il laisse la fonction de fenêtre (ici ROW_NUMBER) repartir de 1 à chaque nouveau groupe. Les produits de la catégorie 2 sont ainsi classés entre eux, indépendamment de ceux de la catégorie 1.",
+      retenir: "PARTITION BY délimite les groupes à l'intérieur d'un OVER ; il ne trie rien lui-même et ne réduit jamais le nombre de lignes — c'est le rôle d'ORDER BY et celui, absent ici, d'un GROUP BY."
+    },
+    {
+      id: "p4-27", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le produit le plus cher de chaque catégorie",
+      question: "Pour chaque catégorie qui a des produits, affichez son produit le plus cher.",
+      consigne: "Trois colonnes, dans cet ordre : categorie_id, id du produit, prix. Triées par categorie_id croissant.",
+      solution: "SELECT categorie_id, id, prix FROM (SELECT id, categorie_id, prix, RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) AS rg FROM produits) WHERE rg = 1 ORDER BY categorie_id",
+      comparer: { ordonne: true },
+      pieges: ["P5"],
+      piste: "PARTITION BY categorie_id redémarre le rang à 1 pour chaque catégorie ; WHERE rg = 1 ne garde ensuite que le sommet de chacune.",
+      clause: "PARTITION BY",
+      exemple: "La catégorie Jardin n'a aucun produit : elle ne peut donc fournir aucune ligne à ce classement, PARTITION BY ou pas.",
+      explication: "RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) classe les produits par prix décroissant, séparément pour chaque catégorie. Filtrer sur rg = 1 garde le plus cher de chacune : 101 (Informatique, 1 299,00 €), 109 (Maison, 1 299,00 €), 115 (Cuisine, 349,00 €), 120 (Sport, 429,00 €), 125 (Livres, 35,00 €), 129 (Jouets, 29,00 €) — six lignes, une par catégorie qui a au moins un produit. Jardin, qui n'en a aucun, n'apparaît naturellement pas : PARTITION BY ne peut former un groupe à partir de rien.",
+      retenir: "PARTITION BY ... ORDER BY ... suivi d'un filtre sur le rang est la façon générale d'obtenir « le meilleur de chaque groupe » : aucune catégorie ne peut fournir une ligne qu'elle ne possède pas."
+    },
+    {
+      id: "p4-28", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 3,
+      titre: "Le top 2 de chaque catégorie, et une surprise",
+      question: "Pour chaque catégorie qui a des produits, affichez ses deux produits les plus chers.",
+      consigne: "Trois colonnes, dans cet ordre : categorie_id, id du produit, prix. Triées par categorie_id croissant, puis par prix décroissant, puis par id croissant.",
+      solution: "SELECT categorie_id, id, prix FROM (SELECT id, categorie_id, prix, RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) AS rg FROM produits) WHERE rg <= 2 ORDER BY categorie_id, prix DESC, id",
+      comparer: { ordonne: true },
+      pieges: ["P5"],
+      piste: "RANK, pas ROW_NUMBER : si deux produits d'une même catégorie partagent le prix du rang 2, ils doivent rester tous les deux.",
+      clause: "RANK",
+      exemple: "L'exercice sur les quantités vendues l'a déjà montré : filtrer sur un rang peut renvoyer plus de lignes que prévu, dès qu'une égalité touche la frontière.",
+      explication: "Six catégories ont des produits : on pourrait attendre 6 × 2 = 12 lignes. Le résultat en compte 13. La catégorie Informatique est seule à avoir DEUX produits à égalité au rang 2 — 102 et 103, tous deux à 449,00 € — et RANK leur donne le même rang : les deux sont donc gardés par WHERE rg <= 2, ce qu'un simple LIMIT 2 (PARTITION BY ou pas) n'aurait pas pu garantir.",
+      retenir: "Un « top N par groupe » écrit avec RANK peut légitimement renvoyer plus de N lignes dans un groupe où une égalité touche la frontière : ce n'est pas une erreur, c'est ce que demande vraiment la question."
+    },
+    {
+      id: "p4-29", type: "predire",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Compter les lignes avant de les voir",
+      question: "Sans l'exécuter : combien de LIGNES la requête de l'exercice précédent renvoie-t-elle au total ? (6 catégories ont des produits, et Informatique a deux produits à égalité au rang 2)",
+      requete: "SELECT categorie_id, id, prix FROM (SELECT id, categorie_id, prix, RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) AS rg FROM produits) WHERE rg <= 2 ORDER BY categorie_id, prix DESC, id;",
+      predit: "nbLignes",
+      pieges: ["P5"],
+      piste: "Sans aucune égalité, ce serait 2 lignes par catégorie. Une seule catégorie déborde de ce compte, et de combien ?",
+      clause: "RANK",
+      exemple: "6 catégories, 2 produits chacune en temps normal : 6 × 2 = 12.",
+      explication: "Cinq catégories (Maison, Cuisine, Sport, Livres, Jouets) fournissent chacune exactement 2 lignes, sans égalité à leur rang 2 : 5 × 2 = 10. Informatique, elle, en fournit 3 (101, 102, 103) parce que 102 et 103 partagent le rang 2. Le total est donc 10 + 3 = 13, et non 6 × 2 = 12.",
+      retenir: "Compter un « top N par groupe » à l'avance suppose de répartir : (nombre de groupes − 1) × N pour les groupes sans égalité à la frontière, plus le nombre réel de lignes du groupe qui en a une."
+    },
+    {
+      id: "p4-30", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Comparer chaque mois au précédent",
+      question: "Pour chaque mois, affichez le nombre de commandes et sa variation par rapport au mois précédent DANS LE RÉSULTAT.",
+      consigne: "Trois colonnes, dans cet ordre : mois (AAAA-MM), nombre de commandes, variation. Triées par mois croissant.",
+      solution: "WITH m AS (SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) AS nb FROM commandes GROUP BY mois) SELECT mois, nb, nb - LAG(nb) OVER (ORDER BY mois) AS variation FROM m ORDER BY mois",
+      comparer: { ordonne: true },
+      pieges: ["P6"],
+      piste: "LAG(nb) OVER (ORDER BY mois) ramène le nb de LA LIGNE PRÉCÉDENTE de ce résultat — pas forcément du mois calendaire précédent.",
+      clause: "LAG",
+      exemple: "Sur un relevé de température quotidien, LAG(temperature) OVER (ORDER BY jour) donnerait la température du jour précédent, pour calculer un écart jour après jour.",
+      explication: "GROUP BY mois ne produit une ligne QUE pour les mois où au moins une commande existe : 17 lignes sur les 18 mois de la boutique. LAG(nb) OVER (ORDER BY mois) compare chaque mois à la LIGNE précédente de ce résultat à 17 lignes, et non au mois calendaire précédent. La première ligne (2025-01) n'a pas de ligne avant elle : sa variation vaut NULL, LAG n'ayant rien à ramener.",
+      retenir: "LAG(colonne) OVER (ORDER BY ...) compare une ligne à celle qui la précède DANS LE RÉSULTAT affiché, jamais à une période calendaire qui pourrait manquer."
+    },
+    {
+      id: "p4-31", type: "predire",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Le mois qui suit un mois absent",
+      question: "Sans l'exécuter : quelle VALEUR la colonne variation affiche-t-elle pour septembre 2025, sachant que juillet 2025 compte 4 commandes, qu'aucune commande n'existe en août 2025, et que septembre 2025 en compte aussi 4 ?",
+      requete: "WITH m AS (SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) AS nb FROM commandes GROUP BY mois) SELECT nb - LAG(nb) OVER (ORDER BY mois) AS variation FROM m WHERE mois = '2025-09';",
+      predit: "valeur",
+      pieges: ["P6"],
+      piste: "Août n'a aucune ligne dans ce résultat : LAG ne peut pas s'y arrêter, il va directement chercher la ligne qui précède VRAIMENT septembre dans le tableau, celle de juillet.",
+      clause: "LAG",
+      exemple: "Dans l'exercice précédent, le résultat de GROUP BY saute directement de 2025-07 à 2025-09, sans aucune ligne pour 2025-08.",
+      explication: "La ligne de septembre 2025 (4 commandes) suit directement celle de juillet 2025 (4 commandes aussi) dans ce résultat à 17 lignes : août n'y figure pas. LAG ramène donc 4 (juillet), et la variation affichée est 4 − 4 = 0. Ce 0 ne veut pas dire « rien n'a changé entre août et septembre » : il dit « septembre a autant de commandes que le dernier mois qui en a eu », ce qui cache entièrement le mois sans aucune commande.",
+      retenir: "Une variation de 0 calculée avec LAG peut cacher un mois entier sans aucune donnée : elle compare toujours à la DERNIÈRE LIGNE PRÉSENTE, jamais à une période qui pourrait être vide."
+    },
+    {
+      id: "p4-32", type: "qcm",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Comprendre", difficulte: 2,
+      titre: "Pourquoi ce 0 ne rassure pas",
+      question: "La variation de septembre 2025, calculée avec LAG, affiche 0. Que peut-on en conclure sur le mois d'août 2025 ?",
+      options: [
+        "Rien de fiable : LAG a comparé septembre au dernier mois présent dans le résultat, qui se trouve être juillet, pas forcément août",
+        "Qu'août a eu exactement le même nombre de commandes que septembre",
+        "Qu'août a eu zéro commande, puisque la variation est nulle",
+        "Que LAG a rencontré une erreur silencieuse et a renvoyé 0 par défaut"
+      ],
+      reponse: 0,
+      pieges: ["P6"],
+      piste: "La requête qui alimente LAG ne contient aucune ligne pour août : LAG ne peut comparer qu'à ce qui existe réellement dans le résultat.",
+      clause: "LAG",
+      exemple: "Si décembre avait aussi 0 commande, LAG comparerait janvier suivant au dernier mois non vide avant lui, quel qu'il soit — pas forcément à décembre.",
+      explication: "LAG n'a aucune connaissance du calendrier : il travaille uniquement sur les lignes du résultat qui lui est donné, dans l'ordre de cet ORDER BY. Puisque GROUP BY n'a produit aucune ligne pour août (aucune commande ce mois-là), LAG, en septembre, se tourne vers la ligne précédente qui EXISTE : juillet. Le 0 affiché ne décrit donc pas une absence de changement entre deux mois consécutifs du calendrier, mais une égalité entre deux mois qui ne sont pas vraiment adjacents.",
+      retenir: "Un 0 calculé par LAG n'est une information sûre que si on a déjà vérifié qu'aucune ligne n'est absente entre les deux mois comparés."
+    },
+    {
+      id: "p4-33", type: "requete",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Le chiffre d'affaires, mois après mois, cumulé",
+      question: "Pour chaque mois, affichez le chiffre d'affaires produits de ce mois et le cumul depuis le début (hors commandes annulées ou retournées).",
+      consigne: "Trois colonnes, dans cet ordre : mois (AAAA-MM), chiffre d'affaires du mois, cumul. Triées par mois croissant.",
+      solution: "WITH m AS (SELECT strftime('%Y-%m', o.date_commande) AS mois, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY mois) SELECT mois, ca, SUM(ca) OVER (ORDER BY mois) AS cumul FROM m ORDER BY mois",
+      comparer: { ordonne: true },
+      piste: "SUM(ca) OVER (ORDER BY mois) additionne le ca de la ligne courante à tous ceux des mois QUI LA PRÉCÈDENT dans cet ordre : c'est l'ORDER BY À L'INTÉRIEUR de OVER qui décide de ce qui est « déjà cumulé ».",
+      clause: "OVER",
+      exemple: "SUM(montant) OVER (ORDER BY date) sur un relevé de compte donnerait, ligne après ligne, le solde cumulé après chaque opération.",
+      explication: "La CTE calcule d'abord le chiffre d'affaires de chaque mois, 17 valeurs. SUM(ca) OVER (ORDER BY mois), sans PARTITION BY, additionne ensuite chaque ligne à TOUTES celles qui la précèdent dans l'ordre chronologique : janvier 2025 cumule son propre montant, février ajoute le sien à celui de janvier, et ainsi de suite jusqu'à juin 2026, où le cumul atteint 12 387,00 € — exactement le chiffre d'affaires produits sur toute la période.",
+      retenir: "SUM(colonne) OVER (ORDER BY ...), sans PARTITION BY, donne un cumul qui grandit ligne après ligne dans l'ordre choisi ; le dernier cumul est toujours égal au total de toute la colonne."
+    },
+    {
+      id: "p4-34", type: "predire",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Le dernier cumul, déjà connu",
+      question: "Sans l'exécuter : quelle VALEUR le cumul affiche-t-il pour le dernier mois, 2026-06 ?",
+      requete: "WITH m AS (SELECT strftime('%Y-%m', o.date_commande) AS mois, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY mois) SELECT SUM(ca) OVER (ORDER BY mois) AS cumul FROM m ORDER BY mois DESC LIMIT 1;",
+      predit: "valeur",
+      piste: "Le cumul du DERNIER mois additionne tous les mois, sans exception : c'est donc une valeur que vous connaissez déjà sous un autre nom.",
+      clause: "OVER",
+      exemple: "Le chiffre d'affaires produits de toute la boutique, défini au palier 3 et repris au chapitre sur les CTE, vaut 12 387,00 €.",
+      explication: "Le cumul du dernier mois additionne le chiffre d'affaires de TOUS les mois, du premier au dernier : c'est, par définition, le chiffre d'affaires produits de toute la période — la même valeur que celle calculée par une simple SUM sans aucun OVER. Un cumul mensuel qui ne retrouve pas ce total à sa dernière ligne signale une erreur dans son calcul.",
+      retenir: "Le dernier cumul d'une somme courante est toujours égal à la somme totale, calculée sans aucun OVER : une bonne façon de vérifier qu'un cumul est juste."
+    },
+    {
+      id: "p4-35", type: "corriger",
+      niveau: "P4", competence: "classer-cumuler", categorie: "Détection d'erreur", difficulte: 3,
+      titre: "Un cumul qui ne cumule pas dans le temps",
+      question: "Pour chaque mois, affichez le chiffre d'affaires produits de ce mois et le cumul depuis le début.",
+      consigne: "Trois colonnes, dans cet ordre : mois, chiffre d'affaires du mois, cumul. Triées par mois croissant.",
+      depart: "WITH m AS (SELECT strftime('%Y-%m', o.date_commande) AS mois, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY mois) SELECT mois, ca, SUM(ca) OVER (ORDER BY ca) AS cumul FROM m ORDER BY mois",
+      solution: "WITH m AS (SELECT strftime('%Y-%m', o.date_commande) AS mois, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY mois) SELECT mois, ca, SUM(ca) OVER (ORDER BY mois) AS cumul FROM m ORDER BY mois",
+      comparer: { ordonne: true },
+      piste: "Comparez les deux ORDER BY À L'INTÉRIEUR des parenthèses de OVER : l'un trie les mois, l'autre trie une colonne qui n'a rien à voir avec le temps.",
+      clause: "OVER",
+      exemple: "Un relevé de compte cumulé par montant d'opération plutôt que par date ne raconterait plus l'histoire du solde au fil du temps, même s'il reste, techniquement, une somme qui augmente.",
+      explication: "Le départ s'exécute sans erreur et produit bien une colonne qui augmente : rien, à l'affichage, ne crie que le calcul est faux. Mais OVER (ORDER BY ca) cumule les mois dans l'ordre de LEUR CHIFFRE D'AFFAIRES, du plus petit au plus grand, pas dans l'ordre chronologique. Le cumul affiché à décembre 2025, par exemple, ne correspond à aucun total réel à cette date : SUM(ca) OVER (ORDER BY mois) de la solution, lui, cumule dans l'ordre du temps, et retrouve 9 022,50 € à cette même ligne.",
+      retenir: "L'ORDER BY À L'INTÉRIEUR d'un OVER décide de l'ordre dans lequel une somme courante s'accumule : il doit toujours porter sur la dimension qu'on parcourt (ici, le temps), jamais sur la valeur qu'on additionne."
+    },
+    {
+      id: "p4-36", type: "requete",
+      niveau: "P4", competence: "dates", categorie: "Mise en pratique", difficulte: 2,
+      titre: "Les commandes expédiées depuis trop longtemps",
+      question: "Au 30 juin 2026, affichez les commandes au statut expediee dont l'expédition remonte à plus de 10 jours.",
+      consigne: "Deux colonnes, dans cet ordre : id de la commande, nombre de jours écoulés depuis la commande. Triées par id croissant.",
+      solution: "SELECT id, julianday('2026-06-30') - julianday(date_commande) AS jours FROM commandes WHERE statut = 'expediee' AND julianday('2026-06-30') - julianday(date_commande) > 10 ORDER BY id",
+      comparer: { ordonne: true },
+      pieges: ["P11"],
+      piste: "julianday('2026-06-30') - julianday(date_commande) donne directement un nombre de jours : comparez-le à 10 comme vous le feriez avec n'importe quel nombre.",
+      clause: "julianday",
+      exemple: "julianday('2026-06-30') - julianday('2026-06-27') vaut 3 : trois jours séparent les deux dates.",
+      explication: "Cinq commandes sont encore au statut expediee au 30 juin 2026 : 1062 (commandée le 2026-05-27, 34 jours), 1064 (2026-06-12, 18 jours), 1065, 1066 et 1067 (2026-06-24 à 2026-06-27, 3 à 6 jours). Seules les deux premières dépassent 10 jours d'attente : 1062 et 1064.",
+      retenir: "julianday('2026-06-30') - julianday(colonne) donne un nombre de jours directement comparable : pas besoin de passer par strftime, qui ne ferait qu'extraire une partie de la date, jamais une durée."
+    },
+    {
+      id: "p4-37", type: "predire",
+      niveau: "P4", competence: "dates", categorie: "Prédire le résultat", difficulte: 2,
+      titre: "Au-delà de 5 jours, sans tout recalculer",
+      question: "Sans l'exécuter : quelle VALEUR cette requête affiche-t-elle ? (les 5 commandes expediee ont 34, 18, 6, 4 et 3 jours d'attente)",
+      requete: "SELECT COUNT(*) FROM commandes WHERE statut = 'expediee' AND julianday('2026-06-30') - julianday(date_commande) > 5;",
+      predit: "valeur",
+      pieges: ["P11"],
+      piste: "Parmi 34, 18, 6, 4 et 3, combien dépassent 5 ?",
+      clause: "julianday",
+      exemple: "L'exercice précédent listait déjà ces cinq délais.",
+      explication: "Sur les cinq commandes expediee et leurs délais (34, 18, 6, 4, 3 jours), trois dépassent 5 jours : 1062 (34), 1064 (18) et 1065 (6). Les deux autres, à 4 et 3 jours, restent sous ce seuil.",
+      retenir: "Une fois les délais d'un petit groupe de lignes connus, changer le seuil d'un filtre se déduit par simple comparaison, sans ré-exécuter la requête."
+    },
+    {
+      id: "p4-38", type: "qcm",
+      niveau: "P4", competence: "dates", categorie: "Comprendre", difficulte: 1,
+      titre: "Pourquoi pas les commandes en_preparation ?",
+      question: "Trois commandes sont encore au statut en_preparation au 30 juin 2026. Pourquoi julianday('2026-06-30') - julianday(date_commande) ne mesure-t-il pas, pour elles, un « retard de livraison » ?",
+      options: [
+        "Parce que cette différence mesure le temps depuis la COMMANDE, pas depuis une expédition ou une livraison qui n'a pas encore eu lieu : ce n'est pas la même question",
+        "Parce que julianday ne fonctionne pas sur les commandes en_preparation",
+        "Parce que ces commandes n'ont pas de date_commande renseignée",
+        "Parce que le résultat serait toujours négatif pour ce statut"
+      ],
+      reponse: 0,
+      pieges: ["P11"],
+      piste: "La colonne comparée est toujours date_commande, quel que soit le statut : ce que change le statut, c'est le SENS qu'il faut donner au nombre de jours obtenu.",
+      clause: "julianday",
+      exemple: "Pour une commande expediee, le même calcul mesure depuis combien de temps elle a quitté l'entrepôt sans encore être arrivée — déjà une question différente d'un « retard de livraison ».",
+      explication: "julianday('2026-06-30') - julianday(date_commande) calcule toujours la même chose : le nombre de jours depuis que la commande a été PASSÉE. Pour une commande en_preparation, ce nombre dit depuis combien de temps elle attend d'être préparée — une information utile, mais pas un retard de livraison, puisqu'aucune expédition n'a encore eu lieu. Mesurer un véritable retard de livraison demanderait une date d'expédition, que cette base ne contient pas.",
+      retenir: "Un calcul de délai ne vaut que par les deux dates qu'il compare : changer le statut d'une commande ne change rien à la formule, mais change entièrement le sens de son résultat."
     }
   ]
 };
@@ -2684,6 +3251,238 @@ const CHAPITRES = [
       astuce: "Devant une colonne qui pointe vers sa propre table — un parrain, un responsable, une catégorie parente —, nommez les deux rôles avant d'écrire la requête : la nommer correctement, c'est déjà l'avoir résolue."
     },
     exercices: ["p3-42", "p3-43", "p3-44", "p3-45"]
+  },
+  /* ── Palier 4 : raisonner (lot 9) ──────────────────────────────────────────────────────────────────────── */
+  {
+    id: "ch-p4-1", niveau: "P4", titre: "Le résultat d'une requête, dans une autre", duree: "6 min",
+    resume: "Une sous-requête entre parenthèses s'exécute d'abord, à part ; sa valeur remplace ensuite la sous-requête dans la requête qui l'utilise.",
+    lecon: {
+      intro: "Jusqu'ici, un WHERE comparait toujours une colonne à une valeur écrite en dur : prix > 100, statut = 'livree'. Rien n'empêche d'écrire, à la place de cette valeur, une requête SQL complète entre parenthèses — une sous-requête. SQLite l'exécute d'abord, entièrement et séparément, puis se sert de ce qu'elle renvoie comme s'il s'agissait d'une valeur ordinaire.",
+      points: [
+        "Une sous-requête qui renvoie UNE seule valeur (une seule ligne, une seule colonne) peut remplacer un nombre ou un texte partout où un WHERE en attendrait un.",
+        "L'exécution se fait en deux temps, toujours dans le même ordre : la sous-requête d'abord, entièrement ; la requête principale ensuite, qui se sert de ce résultat comme d'une constante.",
+        "Une sous-requête qui renvoie PLUSIEURS valeurs ne peut pas servir avec = (qui n'accepte qu'une seule valeur) ; le chapitre suivant montre l'outil fait pour ce cas, IN.",
+        "Écrire une sous-requête revient à nommer, provisoirement, un calcul qu'on aurait pu faire à part et noter avant de continuer : exactement l'esprit que la CTE, plus loin dans ce palier, rendra explicite."
+      ],
+      exemple: {
+        titre: "Une valeur calculée, utilisée tout de suite",
+        code: "SELECT COUNT(*) FROM produits WHERE prix > (SELECT AVG(prix) FROM produits);",
+        resultat: "6 — le nombre de produits dont le prix dépasse la moyenne de tous les produits, 165,31 €.",
+        commentaire: "(SELECT AVG(prix) FROM produits) s'exécute d'abord et renvoie un seul nombre : 165,31. La requête principale compare ensuite chaque prix à CE nombre, exactement comme si WHERE prix > 165.31 avait été écrit directement."
+      },
+      astuce: "Pour vérifier qu'une sous-requête est bien utilisable telle quelle dans un WHERE, exécutez-la SEULE d'abord : si elle renvoie une seule ligne et une seule colonne, elle peut remplacer une valeur simple. Si elle en renvoie plusieurs, il faudra IN, pas =."
+    },
+    exercices: ["p4-01", "p4-02", "p4-03"]
+  },
+  {
+    id: "ch-p4-2", niveau: "P4", titre: "IN et NOT IN avec une sous-requête", duree: "6 min",
+    resume: "IN accepte une sous-requête qui renvoie plusieurs valeurs ; NOT IN en est le contraire — tant qu'aucun NULL ne s'en mêle.",
+    lecon: {
+      intro: "Une sous-requête qui renvoie plusieurs lignes ne peut pas se comparer avec =, réservé à une valeur unique. IN, lui, est conçu pour une liste : écrite à la main entre parenthèses, ou renvoyée par une sous-requête qui produit plusieurs lignes d'une seule colonne. NOT IN en est le contraire logique — sauf dans un cas, que ce chapitre prépare sans encore le montrer.",
+      points: [
+        "colonne IN (SELECT ...) garde les lignes dont la colonne correspond à AU MOINS UNE des valeurs renvoyées par la sous-requête.",
+        "colonne NOT IN (SELECT ...) garde, en apparence, les lignes dont la colonne ne correspond à AUCUNE de ces valeurs.",
+        "La sous-requête d'un IN ou d'un NOT IN ne renvoie qu'UNE colonne, mais autant de lignes qu'elle veut : c'est elle qui fait toute la différence avec = ou <>, limités à une seule valeur.",
+        "Tant que cette colonne ne contient aucun NULL, IN et NOT IN se comportent exactement comme on l'attend. Le chapitre suivant montre ce qui se passe dès qu'un NULL s'y glisse."
+      ],
+      exemple: {
+        titre: "Une liste de produits, une liste de clients",
+        code: "SELECT c.id, c.prenom, c.nom FROM clients c WHERE c.id IN (SELECT o.client_id FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE l.produit_id IN (SELECT id FROM produits WHERE categorie_id = 6));",
+        resultat: "4 lignes : les seuls clients à avoir commandé un produit de la catégorie Jouets.",
+        commentaire: "Trois sous-requêtes s'enchaînent, chacune donnant sa liste à la suivante : les produits Jouets, puis les commandes qui en contiennent un, puis les clients de ces commandes. Chaque IN accepte sans difficulté une liste de plusieurs valeurs."
+      },
+      astuce: "Avant d'utiliser NOT IN, demandez-vous toujours si la colonne renvoyée par la sous-requête peut contenir NULL (une colonne facultative, en particulier). Si oui, le chapitre suivant s'applique à vous."
+    },
+    exercices: ["p4-04", "p4-05", "p4-06"]
+  },
+  {
+    id: "ch-p4-3", niveau: "P4", titre: "NOT IN face à NULL : le piège du parrainage", duree: "8 min",
+    resume: "NOT IN (SELECT ...) renvoie 0 ligne dès qu'un seul NULL se trouve dans la sous-requête — sans la moindre erreur visible.",
+    lecon: {
+      intro: "parrain_id vaut NULL pour 31 des 40 clients de la boutique : ils sont venus sans être parrainés. Cette colonne, prise comme sous-requête d'un NOT IN, produit le piège le plus coûteux de ce palier — et l'un des plus fréquents en entreprise, précisément parce qu'il ne provoque jamais d'erreur.",
+      points: [
+        "1 NOT IN (2, NULL, 4) ne vaut ni vrai ni faux : SQL ne peut pas garantir que 1 soit absent d'une liste dont une valeur reste inconnue, et traite cette incertitude comme s'il n'était pas vrai.",
+        "Dès qu'UNE SEULE valeur de la sous-requête d'un NOT IN est NULL, ce raisonnement s'applique à TOUTES les lignes testées : le résultat devient 0, pour tout le monde, sans message d'erreur.",
+        "NOT EXISTS (SELECT 1 FROM ... WHERE condition_de_correspondance) pose une question différente — une ligne correspondante existe-t-elle ? — qui a toujours une réponse franche, même quand la table contient des NULL ailleurs.",
+        "IN, lui, n'a besoin de trouver qu'UNE correspondance : un NULL dans sa liste ne l'empêche jamais de la trouver si elle existe. Seul NOT IN est vulnérable à ce piège."
+      ],
+      exemple: {
+        titre: "0 ligne, et pourtant 31 clients concernés",
+        code: "SELECT id FROM clients WHERE id NOT IN (SELECT parrain_id FROM clients);",
+        resultat: "0 ligne — alors que 31 clients n'ont jamais parrainé personne.",
+        commentaire: "La sous-requête renvoie 9 identifiants et 31 NULL. Ce seul fait suffit à rendre NOT IN incapable de répondre « vrai » pour qui que ce soit : le résultat tombe à 0, sans qu'aucun message ne le signale."
+      },
+      astuce: "Devant un NOT IN (SELECT ...) qui renvoie 0 ligne de façon suspecte, vérifiez en premier si la colonne de la sous-requête peut contenir NULL. Si oui, remplacez-le par NOT EXISTS plutôt que de chercher une erreur ailleurs."
+    },
+    exercices: ["p4-07", "p4-08", "p4-09", "p4-10"]
+  },
+  {
+    id: "ch-p4-4", niveau: "P4", titre: "La sous-requête corrélée : se comparer à soi-même", duree: "8 min",
+    resume: "Une sous-requête corrélée se réexécute pour chaque ligne de la requête extérieure, en fonction de cette ligne — jamais une seule fois pour toute la table.",
+    lecon: {
+      intro: "Toutes les sous-requêtes vues jusqu'ici s'exécutaient UNE SEULE FOIS, indépendamment du reste de la requête. Une sous-requête corrélée fait l'inverse : elle contient une référence à la ligne de la requête extérieure, et se réexécute donc pour CHAQUE ligne, avec un résultat potentiellement différent à chaque fois. C'est contre-intuitif — on a l'habitude qu'une requête s'exécute une fois — et c'est exactement là qu'on perd le fil la première fois qu'on la rencontre.",
+      points: [
+        "Une sous-requête corrélée contient, dans sa clause WHERE, une référence à une colonne de la requête extérieure (par exemple o.client_id) : c'est cette référence qui la rend corrélée.",
+        "SQLite réexécute cette sous-requête pour chaque ligne de la requête extérieure, en substituant la valeur de cette ligne à chaque fois : la moyenne calculée pour le client 201 n'est pas celle calculée pour le client 202.",
+        "Oublier cette référence ne provoque aucune erreur : la sous-requête devient alors ordinaire, calcule une seule valeur pour TOUTE la table, et répond silencieusement à une autre question que celle posée.",
+        "C'est la façon la plus courante de répondre à « au-dessus de SA PROPRE moyenne », « le plus récent DE CHAQUE client » ou « plus que la moyenne DE SON GROUPE » — des questions qu'un agrégat ordinaire, calculé une seule fois, ne peut pas poser."
+      ],
+      exemple: {
+        titre: "Une moyenne différente pour chaque client",
+        code: "SELECT o.id FROM commandes o WHERE o.client_id = 201 AND (SELECT SUM(l.quantite*l.prix_unitaire) FROM lignes_commande l WHERE l.commande_id = o.id) > (SELECT AVG(m.total) FROM (SELECT SUM(l2.quantite*l2.prix_unitaire) AS total FROM commandes o2 JOIN lignes_commande l2 ON l2.commande_id = o2.id WHERE o2.client_id = o.client_id GROUP BY o2.id) AS m);",
+        resultat: "2 lignes : les commandes 1001 et 1019, les deux seules du client 201 à dépasser SA moyenne de 781,50 €.",
+        commentaire: "o2.client_id = o.client_id est la référence qui corrèle la sous-requête : retirée, elle calculerait la moyenne de TOUTES les commandes de la boutique, pas seulement celles de 201, et répondrait à une question différente."
+      },
+      astuce: "Pour repérer une sous-requête corrélée, cherchez si elle contient une colonne de la table extérieure (comme o.client_id). Si oui, elle se réexécute ligne par ligne ; si non, elle ne s'exécute qu'une seule fois, pour toute la requête."
+    },
+    exercices: ["p4-11", "p4-12", "p4-13", "p4-14"]
+  },
+  {
+    id: "ch-p4-5", niveau: "P4", titre: "La CTE : nommer une étape", duree: "7 min",
+    resume: "WITH nom AS (...) donne un nom au résultat d'une sous-requête, pour le réutiliser comme une table — d'abord pour la lisibilité, puis parce que cela évite un gonflement.",
+    lecon: {
+      intro: "Tout ce que fait une CTE, une sous-requête ordinaire pouvait déjà le faire : WITH n'ajoute aucune capacité de calcul nouvelle. Ce qu'elle ajoute, c'est un nom — la possibilité d'écrire une étape intermédiaire à part, de lui donner un nom clair, puis de continuer la requête comme si ce nom désignait une table ordinaire. Une requête longue devient une suite d'étapes qu'on peut lire une par une, au lieu d'une seule phrase emboîtée.",
+      points: [
+        "WITH nom AS (SELECT ...) SELECT ... FROM nom : la partie entre parenthèses s'exécute d'abord, son résultat porte le nom choisi, et le reste de la requête le lit comme une table.",
+        "Une CTE peut porter une agrégation ENTIÈRE (un GROUP BY complet) avant qu'une jointure n'ait lieu : le reste de la requête ne voit alors qu'une ligne par groupe, jamais une par ligne détaillée.",
+        "C'est exactement le moyen d'éviter le gonflement d'un SUM après une jointure, vu au palier précédent : agréger AVANT de joindre, plutôt qu'après, grâce à une étape nommée.",
+        "Une fois nommée, une CTE se filtre avec un WHERE ordinaire sur ses propres colonnes, même si ces colonnes viennent d'un agrégat — plus besoin du HAVING réservé aux agrégats non nommés."
+      ],
+      exemple: {
+        titre: "Une étape, puis la suite",
+        code: "WITH par_commande AS (SELECT l.commande_id, SUM(l.quantite*l.prix_unitaire) AS montant FROM lignes_commande l GROUP BY l.commande_id) SELECT SUM(c.montant) FROM par_commande c JOIN commandes o ON o.id = c.commande_id WHERE o.statut NOT IN ('annulee', 'retournee');",
+        resultat: "12 387,00 € — le chiffre d'affaires produits de toute la boutique.",
+        commentaire: "par_commande calcule d'abord, une fois pour toutes, le montant de chaque commande. La jointure qui suit ne voit plus qu'UNE ligne par commande : aucun montant ne peut y être compté deux fois."
+      },
+      astuce: "Dès qu'une requête mêle un agrégat ET une jointure, demandez-vous si l'agrégat peut être calculé À L'INTÉRIEUR d'une CTE, avant la jointure, plutôt qu'après elle : c'est souvent la façon d'éviter un total gonflé."
+    },
+    exercices: ["p4-15", "p4-16", "p4-17", "p4-18"]
+  },
+  {
+    id: "ch-p4-6", niveau: "P4", titre: "GROUP BY et fonction de fenêtre : deux manières de compter", duree: "7 min",
+    resume: "GROUP BY réduit les lignes à une par groupe ; une fonction de fenêtre garde toutes les lignes et leur ajoute une colonne calculée sur leur groupe.",
+    lecon: {
+      intro: "Depuis le palier 2, GROUP BY répond à une question précise : une ligne par groupe, le détail disparaît. Les 70 commandes groupées par client ne laissent que les clients, et ce choix est voulu — on ne lit plus les commandes elles-mêmes, seulement ce qu'elles donnent une fois réunies. Une fonction de fenêtre part du même calcul (compter, sommer, classer) mais refuse ce choix : elle garde CHAQUE ligne de départ, et lui ajoute simplement une colonne qui regarde son groupe. Les 70 commandes restent 70, et portent en plus le nombre de commandes de leur client.",
+      points: [
+        "GROUP BY client_id réduit : une ligne par groupe, et le SELECT ne peut plus lire que les colonnes groupées ou des agrégats.",
+        "nomFonction() OVER (PARTITION BY client_id) ne réduit rien : il calcule un agrégat « par groupe », mais l'écrit sur chaque ligne d'origine. Le nombre de lignes du résultat reste celui de la table de départ, jamais celui des groupes.",
+        "PARTITION BY, dans OVER, joue le même rôle que GROUP BY : il délimite les groupes. Mais là où GROUP BY fusionne les lignes d'un groupe en une seule, PARTITION BY les laisse toutes à leur place.",
+        "La différence se voit tout de suite au nombre de lignes du résultat : plus petit que la table de départ, c'est un GROUP BY ; égal, c'est une fonction de fenêtre. Les chapitres qui suivent (rang, LAG, cumul) utilisent tous OVER, et jamais pour réduire des lignes."
+      ],
+      exemple: {
+        titre: "70 lignes, ou 34 ?",
+        code: "SELECT client_id, COUNT(*) AS nb FROM commandes GROUP BY client_id;\nSELECT id, client_id, COUNT(*) OVER (PARTITION BY client_id) AS nb_commandes_du_client FROM commandes;",
+        resultat: "Le premier renvoie 34 lignes (un par client qui a commandé). Le second en renvoie 70, chacune portant en plus le nombre total de commandes de son client.",
+        commentaire: "Le second résultat ne cache rien : la commande 1001 du client 201 s'affiche avec sa propre ligne, ET avec le nombre de commandes de 201 recopié à côté. GROUP BY aurait perdu la commande elle-même pour ne garder que ce total ; OVER (PARTITION BY ...) garde les deux informations à la fois, prêtes à être comparées sur une même ligne — exactement ce qu'il faudra au chapitre suivant pour repérer un rang."
+      },
+      astuce: "Avant d'écrire OVER, demandez-vous : la question veut-elle UNE ligne par groupe (le détail disparaît) ou veut-elle garder le détail en le comparant à son groupe ? La première réponse est un GROUP BY, déjà connu depuis le palier 2. La seconde est une fonction de fenêtre, le sujet de ce chapitre et des quatre suivants."
+    },
+    exercices: ["p4-19", "p4-20", "p4-21"]
+  },
+  {
+    id: "ch-p4-7", niveau: "P4", titre: "Le rang et les ex æquo : ROW_NUMBER, RANK, DENSE_RANK", duree: "9 min",
+    resume: "Trois fonctions s'écrivent de la même façon, mais traitent différemment une égalité : c'est elle qui les distingue, jamais le reste.",
+    lecon: {
+      intro: "ROW_NUMBER, RANK et DENSE_RANK numérotent toutes les trois un classement, avec la même écriture : nomFonction() OVER (ORDER BY ...). Tant qu'aucune valeur n'est à égalité, les trois donnent exactement le même résultat, et rien ne les distingue. C'est devant une égalité — deux produits au même prix, deux clients au même total — que chacune révèle sa propre règle, et c'est là tout l'enjeu de ce chapitre, le cœur de ce palier.",
+      points: [
+        "ROW_NUMBER() numérote 1, 2, 3… sans jamais attribuer deux fois le même numéro : devant une égalité, il choisit arbitrairement qui reçoit le plus petit numéro, à moins qu'une clé secondaire ne le départage.",
+        "RANK() donne le MÊME rang à des valeurs égales, puis SAUTE les rangs que cette égalité a consommés : après deux ex æquo au rang 2, la ligne suivante reçoit le rang 4, pas 3.",
+        "DENSE_RANK() donne aussi le même rang à des valeurs égales, mais ne saute JAMAIS de rang : après deux ex æquo au rang 2, la ligne suivante reçoit le rang 3 — il compte les valeurs DISTINCTES déjà vues, pas les lignes.",
+        "Un LIMIT fixe coupe un classement à un nombre de LIGNES précis, sans savoir si une égalité se trouve juste à cette frontière : RANK, filtré par WHERE rang <= n, respecte cette égalité, même si cela veut dire renvoyer plus de n lignes."
+      ],
+      exemple: {
+        titre: "Une égalité à 1 299 €, deux façons différentes de la traiter",
+        code: "SELECT id, prix, RANK() OVER (ORDER BY prix DESC) AS rang, DENSE_RANK() OVER (ORDER BY prix DESC) AS rang_dense FROM produits WHERE id IN (101, 109, 110) ORDER BY prix DESC;",
+        resultat: "101 et 109, tous deux à 1 299,00 €, reçoivent le rang 1 ; 110, à 34,00 €, reçoit le rang 3 avec RANK, mais le rang 2 avec DENSE_RANK.",
+        commentaire: "RANK compte les deux lignes déjà classées (101 et 109) avant d'attribuer le rang 3 à 110. DENSE_RANK, lui, ne compte qu'UNE valeur distincte déjà vue (1 299,00 €) et attribue le rang 2."
+      },
+      astuce: "Devant une égalité, posez-vous la question dans cet ordre : voulez-vous un numéro unique à tout prix (ROW_NUMBER) ? un rang qui reflète le nombre de lignes devant (RANK) ? ou un rang qui ne compte que les valeurs différentes (DENSE_RANK) ?"
+    },
+    exercices: ["p4-22", "p4-23", "p4-24", "p4-25", "p4-26"]
+  },
+  {
+    id: "ch-p4-8", niveau: "P4", titre: "Le meilleur de chaque catégorie : le top-N par groupe", duree: "7 min",
+    resume: "PARTITION BY ... ORDER BY ... suivi d'un filtre sur le rang donne le meilleur de chaque groupe — et peut légitimement renvoyer plus de lignes qu'attendu si un ex æquo touche la frontière.",
+    lecon: {
+      intro: "Trouver le produit le plus cher de CHAQUE catégorie, ou les deux plus vendus de chaque rayon, est une question de rang PAR GROUPE : PARTITION BY redémarre le classement à 1 pour chaque groupe, exactement comme GROUP BY délimiterait ces mêmes groupes pour un agrégat ordinaire — sans jamais en fusionner les lignes.",
+      points: [
+        "RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) classe les produits par prix décroissant SÉPARÉMENT pour chaque catégorie : le classement d'Informatique ne mélange jamais ses rangs avec celui de Maison.",
+        "Filtrer ensuite sur WHERE rang <= n garde le haut de CHAQUE groupe : n par catégorie, en temps normal.",
+        "Si deux lignes d'un même groupe partagent exactement le rang n (une égalité à la frontière), RANK les garde toutes les deux : le résultat compte alors plus de n lignes pour ce groupe-là, et c'est la bonne réponse, pas une erreur.",
+        "Une catégorie sans aucun produit ne peut fournir aucune ligne à ce classement : PARTITION BY ne peut pas former un groupe à partir de rien."
+      ],
+      exemple: {
+        titre: "Deux par catégorie, sauf une qui en donne trois",
+        code: "SELECT categorie_id, id, prix FROM (SELECT id, categorie_id, prix, RANK() OVER (PARTITION BY categorie_id ORDER BY prix DESC) AS rg FROM produits) WHERE rg <= 2;",
+        resultat: "13 lignes, et non 12 : la catégorie Informatique en fournit 3 (101, 102, 103), les deux derniers à égalité au rang 2.",
+        commentaire: "Cinq catégories fournissent exactement 2 lignes chacune. Informatique en fournit 3, parce que 102 et 103 (449,00 € chacun) se partagent vraiment le rang 2 : RANK <= 2 les garde l'un ET l'autre."
+      },
+      astuce: "Pour un « top N par groupe », ne filtrez jamais sur un simple LIMIT : filtrez sur WHERE rang <= n, écrit avec RANK ou DENSE_RANK selon que vous voulez compter les lignes ou les valeurs distinctes consommées par une éventuelle égalité."
+    },
+    exercices: ["p4-27", "p4-28", "p4-29"]
+  },
+  {
+    id: "ch-p4-9", niveau: "P4", titre: "LAG : comparer à la ligne précédente", duree: "7 min",
+    resume: "LAG ramène la valeur de la ligne précédente DU RÉSULTAT, pas de la période calendaire précédente — un mois absent du résultat ne compte jamais comme une ligne à comparer.",
+    lecon: {
+      intro: "LAG(colonne) OVER (ORDER BY ...) ramène, sur chaque ligne, la valeur de la colonne prise sur la ligne qui la précède dans ce même résultat trié. C'est utile pour comparer un mois au précédent, un jour au précédent, une commande à celle d'avant du même client. Mais LAG ne connaît que les lignes qu'on lui donne : s'il en manque une, il compare simplement à la DERNIÈRE qui existe, sans jamais signaler l'absence.",
+      points: [
+        "GROUP BY strftime('%Y-%m', date_commande) ne produit une ligne QUE pour les mois où au moins une commande existe : un mois sans aucune commande n'apparaît tout simplement pas, comme déjà vu au palier 2.",
+        "LAG(nb) OVER (ORDER BY mois), sur ce résultat à 17 lignes (un mois, août 2025, en manque), compare chaque mois à la LIGNE précédente DE CE RÉSULTAT — qui peut être le mois d'avant, ou un mois plus ancien si une ligne manque entre les deux.",
+        "Une variation de 0 calculée ainsi ne veut pas dire « rien n'a changé entre les deux mois civils » : elle peut cacher entièrement un mois sans aucune donnée.",
+        "Vérifier qu'aucune ligne ne manque entre deux mois comparés est la seule façon de faire confiance à une variation calculée par LAG."
+      ],
+      exemple: {
+        titre: "Juillet, puis directement septembre",
+        code: "WITH m AS (SELECT strftime('%Y-%m', date_commande) AS mois, COUNT(*) AS nb FROM commandes GROUP BY mois) SELECT mois, nb, LAG(nb) OVER (ORDER BY mois) AS mois_precedent FROM m WHERE mois IN ('2025-07', '2025-09');",
+        resultat: "Juillet affiche 4 commandes ; septembre, aussi 4, avec mois_precedent valant 4 — la valeur de juillet, pas celle d'un mois d'août qui n'existe pas dans ce résultat.",
+        commentaire: "Aucune commande n'a été passée en août 2025 : GROUP BY ne produit donc aucune ligne pour ce mois. LAG, en septembre, se tourne vers la dernière ligne qui existe réellement avant elle : juillet."
+      },
+      astuce: "Avant de faire confiance à une variation calculée par LAG sur des données groupées par mois, vérifiez d'abord si CHAQUE mois de la période a bien produit une ligne — sinon, une absence totale peut se cacher derrière une variation de 0."
+    },
+    exercices: ["p4-30", "p4-31", "p4-32"]
+  },
+  {
+    id: "ch-p4-10", niveau: "P4", titre: "Cumuler : SUM() OVER", duree: "6 min",
+    resume: "SUM(colonne) OVER (ORDER BY ...), sans PARTITION BY, additionne chaque ligne à toutes celles qui la précèdent dans l'ordre choisi — un cumul qui grandit ligne après ligne.",
+    lecon: {
+      intro: "Une fonction de fenêtre ne sert pas qu'à classer : SUM() OVER (ORDER BY ...) calcule, sur chaque ligne, la somme de cette ligne et de TOUTES CELLES QUI LA PRÉCÈDENT dans l'ordre choisi — un cumul, comme un solde de compte qui grandit opération après opération.",
+      points: [
+        "SUM(colonne) OVER (ORDER BY cle) additionne la ligne courante à toutes celles dont la clé de tri est plus petite (ou égale, selon les égalités) : c'est l'ORDER BY À L'INTÉRIEUR de OVER qui décide de ce qui est « déjà cumulé ».",
+        "Le dernier cumul d'une liste complète est toujours égal à la somme totale de la colonne, calculée sans aucun OVER : une bonne façon de vérifier qu'un cumul est juste.",
+        "L'ORDER BY d'un cumul doit toujours porter sur la DIMENSION qu'on parcourt (le temps, le plus souvent), jamais sur la valeur qu'on additionne : trier par la valeur elle-même donnerait un nombre qui augmente, mais qui ne représenterait plus rien de réel.",
+        "PARTITION BY peut s'ajouter pour cumuler séparément par groupe (un cumul par client, par exemple) : le cumul repart alors de zéro à chaque nouveau groupe, exactement comme LAG le ferait."
+      ],
+      exemple: {
+        titre: "Un total qui grandit mois après mois",
+        code: "WITH m AS (SELECT strftime('%Y-%m', o.date_commande) AS mois, SUM(l.quantite*l.prix_unitaire) AS ca FROM commandes o JOIN lignes_commande l ON l.commande_id = o.id WHERE o.statut NOT IN ('annulee', 'retournee') GROUP BY mois) SELECT mois, ca, SUM(ca) OVER (ORDER BY mois) AS cumul FROM m WHERE mois IN ('2025-01', '2025-02', '2025-03');",
+        resultat: "1 377,75 € en janvier (cumul : 1 377,75 €), 553,50 € en février (cumul : 1 931,25 €), 626,50 € en mars (cumul : 2 557,75 €).",
+        commentaire: "Chaque cumul additionne le chiffre d'affaires du mois à celui de TOUS les mois précédents. Le dernier mois de la boutique, juin 2026, afficherait un cumul de 12 387,00 € — le chiffre d'affaires produits de toute la période."
+      },
+      astuce: "Pour vérifier un cumul, comparez toujours sa DERNIÈRE ligne à une somme ordinaire, sans aucun OVER, sur la même colonne : les deux doivent être strictement égales."
+    },
+    exercices: ["p4-33", "p4-34", "p4-35"]
+  },
+  {
+    id: "ch-p4-11", niveau: "P4", titre: "Les retards : julianday face à la date de référence", duree: "6 min",
+    resume: "julianday(date) convertit une date en nombre de jours : soustraire deux julianday donne directement une durée, sans passer par strftime.",
+    lecon: {
+      intro: "strftime extrait une PARTIE d'une date (l'année, le mois) : il ne mesure jamais une DURÉE entre deux dates. julianday fait l'inverse : il convertit une date entière en un nombre (le compte de jours depuis une origine fixe), et la différence de deux julianday donne directement un nombre de jours — exactement ce qu'il faut pour mesurer un retard par rapport au 30 juin 2026, la date de référence de toute la boutique.",
+      points: [
+        "julianday('2026-06-30') - julianday(date_commande) donne un nombre de jours, directement comparable à un seuil (> 10, par exemple) comme n'importe quel nombre.",
+        "La date de référence, '2026-06-30', est TOUJOURS écrite en littéral dans la requête, jamais lue dans la base ni remplacée par date('now') : la boutique n'a aucune notion d'« aujourd'hui » qui lui soit propre.",
+        "Le même calcul, appliqué à des commandes de statuts différents, ne mesure pas la même chose : un délai depuis la commande n'est un « retard de livraison » que si la commande a effectivement été expédiée sans encore être arrivée.",
+        "Pour un délai entre deux dates DE LA BASE (commande et livraison, par exemple), la même soustraction s'applique : julianday(date_livraison) - julianday(date_commande)."
+      ],
+      exemple: {
+        titre: "34 jours d'attente, au 30 juin 2026",
+        code: "SELECT id, date_commande, julianday('2026-06-30') - julianday(date_commande) AS jours FROM commandes WHERE statut = 'expediee' ORDER BY jours DESC;",
+        resultat: "5 lignes, de 34 jours (commande 1062, du 27 mai 2026) à 3 jours (commande 1067, du 27 juin 2026).",
+        commentaire: "Chaque ligne obtient un nombre de jours directement comparable : pas besoin d'extraire l'année ou le mois, julianday mesure une durée complète, jours compris."
+      },
+      astuce: "Dès qu'une question porte sur une DURÉE entre deux dates (un délai, un retard, une ancienneté), pensez julianday. Dès qu'elle porte sur une PARTIE d'une date (l'année, le mois, pour regrouper ou filtrer), pensez strftime — les deux ne se remplacent jamais l'un l'autre."
+    },
+    exercices: ["p4-36", "p4-37", "p4-38"]
   }
 ];
 
@@ -2724,7 +3523,17 @@ const CLAUSES = {
   "MAX": { syntaxe: "MAX(colonne)", aide: "renvoie la plus grande valeur non NULL d'une colonne" },
   "HAVING": { syntaxe: "SELECT colonne, agrégat FROM table GROUP BY colonne HAVING condition", aide: "filtre les groupes déjà formés par GROUP BY, selon le résultat d'une fonction d'agrégat — jamais avant le regroupement" },
   "CASE WHEN": { syntaxe: "CASE WHEN condition1 THEN valeur1 WHEN condition2 THEN valeur2 ELSE valeur3 END", aide: "construit une valeur selon des conditions testées dans l'ordre ; sans ELSE, une ligne qui ne vérifie rien reçoit NULL" },
-  "strftime": { syntaxe: "strftime('%Y', colonne) ou strftime('%Y-%m', colonne)", aide: "extrait une partie d'une date (année, mois…), toujours sous forme de texte — jamais un nombre" }
+  "strftime": { syntaxe: "strftime('%Y', colonne) ou strftime('%Y-%m', colonne)", aide: "extrait une partie d'une date (année, mois…), toujours sous forme de texte — jamais un nombre" },
+  "NOT IN": { syntaxe: "… WHERE colonne NOT IN (SELECT …)", aide: "garde les lignes dont la colonne n'apparaît dans aucune valeur renvoyée par la sous-requête ; si cette sous-requête renvoie un seul NULL, NOT IN ne renvoie plus aucune ligne, quelles que soient les autres valeurs" },
+  "EXISTS": { syntaxe: "… WHERE EXISTS (SELECT 1 FROM … WHERE …) ou NOT EXISTS (…)", aide: "teste seulement si la sous-requête renvoie au moins une ligne, sans regarder sa valeur ; contrairement à NOT IN, un NULL dans la sous-requête ne le perturbe jamais" },
+  "WITH": { syntaxe: "WITH nom AS (SELECT …) SELECT … FROM nom", aide: "nomme le résultat d'une sous-requête pour le réutiliser comme une table, le temps d'une seule requête (CTE, « common table expression »)" },
+  "OVER": { syntaxe: "fonction() OVER (PARTITION BY … ORDER BY …)", aide: "calcule une fonction sur un groupe de lignes sans les réduire à une seule : chaque ligne de départ garde sa place et reçoit le résultat" },
+  "PARTITION BY": { syntaxe: "… OVER (PARTITION BY colonne ORDER BY …)", aide: "délimite les groupes à l'intérieur d'un OVER, comme GROUP BY le fait pour un agrégat ordinaire — mais sans jamais fusionner les lignes du groupe" },
+  "ROW_NUMBER": { syntaxe: "ROW_NUMBER() OVER (ORDER BY …)", aide: "numérote les lignes 1, 2, 3… sans jamais d'égalité ; sur des valeurs à égalité, le départage est arbitraire sauf si l'ORDER BY contient une clé qui le rend unique" },
+  "RANK": { syntaxe: "RANK() OVER (ORDER BY …)", aide: "donne le même rang à des valeurs égales, puis saute les rangs consommés par cette égalité (1, 2, 2, 4…)" },
+  "DENSE_RANK": { syntaxe: "DENSE_RANK() OVER (ORDER BY …)", aide: "donne le même rang à des valeurs égales, mais ne saute jamais de rang (1, 2, 2, 3…) : le rang suivant compte les valeurs distinctes déjà vues, pas les lignes" },
+  "LAG": { syntaxe: "LAG(colonne) OVER (ORDER BY …)", aide: "ramène la valeur de la ligne précédente DU RÉSULTAT, pas de la période précédente du calendrier : une période absente du résultat ne compte pas comme une ligne à comparer" },
+  "julianday": { syntaxe: "julianday(date1) - julianday(date2)", aide: "convertit une date en nombre de jours depuis une origine fixe ; la différence de deux julianday donne directement un nombre de jours entre deux dates" }
 };
 
 /* Vocabulaire du Lexique (lot 6) : les mots qu'il faut comprendre avant de lire CLAUSES. Le chapitre 0 les
@@ -2908,6 +3717,76 @@ const FICHES = {
     contexte: "La bonne clause dès que la question inclut les cas vides : « tous les clients, même ceux qui n'ont jamais commandé », « chaque produit, avec ses ventes s'il en a ». C'est aussi la façon d'aller chercher ce qui n'existe pas, en gardant ensuite les lignes où la table de droite est restée NULL.",
     erreur: "Compter avec COUNT(*) après un LEFT JOIN : une ligne sans correspondance existe quand même dans le résultat, et compte donc pour une. COUNT(colonne de la table de droite) renvoie bien 0 pour ces lignes-là.",
     voirAussi: ["JOIN", "ON", "IS NULL", "COUNT"],
+    entrainements: []
+  },
+  "NOT IN": {
+    but: "Garder les lignes dont une colonne n'apparaît dans aucune des valeurs renvoyées par une sous-requête.",
+    contexte: "S'écrit comme son contraire, IN, mais ne s'y comporte pas de la même façon dès qu'un NULL se glisse dans la sous-requête — c'est tout l'objet de ce chapitre.",
+    erreur: "Utiliser NOT IN avec une sous-requête dont la colonne peut contenir NULL (une auto-référence facultative, par exemple) : le résultat devient 0 ligne, sans aucune erreur, quelles que soient les autres valeurs. EXISTS/NOT EXISTS ne connaissent pas ce piège.",
+    voirAussi: ["EXISTS", "IN", "IS NULL"],
+    entrainements: []
+  },
+  "EXISTS": {
+    but: "Tester si une sous-requête renvoie au moins une ligne, sans jamais regarder la valeur de cette ligne.",
+    contexte: "Le correctif de NOT IN face à un NULL : NOT EXISTS (SELECT 1 FROM … WHERE condition_de_correspondance) répond à la même question que NOT IN, sans jamais se laisser piéger par une valeur absente.",
+    erreur: "Oublier la condition de correspondance à l'intérieur du EXISTS : sans elle, la sous-requête ne teste plus rien de spécifique à la ligne extérieure, et répond la même chose pour toutes les lignes.",
+    voirAussi: ["NOT IN", "JOIN"],
+    entrainements: []
+  },
+  "WITH": {
+    but: "Donner un nom au résultat d'une sous-requête, pour le réutiliser comme une table ordinaire dans le reste de la requête.",
+    contexte: "Utile dès qu'une sous-requête devient longue, ou qu'on en a besoin à plusieurs endroits : la nommer une fois avec WITH évite de la répéter, et rend la requête lisible étape par étape.",
+    erreur: "Croire qu'une CTE introduit une nouvelle capacité de calcul : elle ne fait que nommer une sous-requête déjà possible sans elle. Le gain est la lisibilité, pas la puissance.",
+    voirAussi: ["GROUP BY", "JOIN"],
+    entrainements: []
+  },
+  "OVER": {
+    but: "Calculer une fonction (compter, sommer, classer, comparer à la ligne précédente…) sur un groupe de lignes, sans réduire ces lignes à une seule.",
+    contexte: "Dès que la question demande de GARDER chaque ligne de départ tout en la comparant à son groupe — son rang, le total de son client, la ligne précédente — c'est OVER qu'il faut, et jamais GROUP BY, qui fusionnerait les lignes.",
+    erreur: "Confondre OVER avec GROUP BY parce que les deux parlent de « groupes » : GROUP BY réduit le nombre de lignes du résultat, OVER ne le change jamais.",
+    voirAussi: ["PARTITION BY", "GROUP BY", "ROW_NUMBER"],
+    entrainements: []
+  },
+  "PARTITION BY": {
+    but: "Délimiter les groupes à l'intérieur d'un OVER, comme GROUP BY le fait pour un agrégat ordinaire.",
+    contexte: "S'écrit à l'intérieur des parenthèses d'un OVER : fonction() OVER (PARTITION BY client_id …) calcule une valeur séparée pour chaque client, mais garde toutes les lignes de commandes.",
+    erreur: "Oublier le PARTITION BY quand il en faudrait un : la fonction de fenêtre considère alors TOUTES les lignes comme un seul et même groupe.",
+    voirAussi: ["OVER", "GROUP BY"],
+    entrainements: []
+  },
+  "ROW_NUMBER": {
+    but: "Numéroter les lignes d'un classement 1, 2, 3… sans jamais attribuer deux fois le même numéro.",
+    contexte: "Utile pour garantir un numéro unique par ligne, par exemple pour n'en garder qu'une par groupe. Dès que deux lignes peuvent être à égalité sur le critère de tri, ROW_NUMBER masque cette égalité.",
+    erreur: "Utiliser ROW_NUMBER pour montrer un classement à l'apprenant quand des valeurs sont à égalité : il numérotera 2 et 3 deux produits au même prix, suggérant à tort qu'un est « meilleur » que l'autre. RANK ou DENSE_RANK respectent l'égalité, ROW_NUMBER ne le peut pas.",
+    voirAussi: ["RANK", "DENSE_RANK", "OVER"],
+    entrainements: []
+  },
+  "RANK": {
+    but: "Classer des lignes en donnant le même rang à des valeurs égales, puis en sautant les rangs que cette égalité a consommés.",
+    contexte: "La bonne fonction dès qu'une égalité doit rester visible dans le classement : deux produits au même prix reçoivent le même rang, et le produit suivant reçoit un rang qui tient compte des deux ex æquo (1, 2, 2, 4).",
+    erreur: "Couper un classement RANK avec un LIMIT fixe : un LIMIT 3 sur un classement 1, 2, 2, 4 ne garantit pas de s'arrêter à une frontière nette — mieux vaut filtrer sur le rang lui-même (WHERE rang <= 3), qui peut légitimement renvoyer plus de 3 lignes.",
+    voirAussi: ["DENSE_RANK", "ROW_NUMBER", "PARTITION BY"],
+    entrainements: []
+  },
+  "DENSE_RANK": {
+    but: "Classer des lignes en donnant le même rang à des valeurs égales, sans jamais sauter de rang ensuite.",
+    contexte: "À choisir plutôt que RANK quand la question porte sur le nombre de valeurs DISTINCTES plutôt que sur le nombre de lignes : « en combientième position de prix, tous les produits confondus ? »",
+    erreur: "Confondre DENSE_RANK et RANK sur un classement sans aucune égalité : les deux donnent alors exactement le même résultat, et la différence ne se voit que le jour où une égalité apparaît.",
+    voirAussi: ["RANK", "ROW_NUMBER"],
+    entrainements: []
+  },
+  "LAG": {
+    but: "Ramener, sur la ligne courante, la valeur d'une colonne prise sur la ligne précédente DU RÉSULTAT.",
+    contexte: "Utile pour comparer un mois à celui qui le précède dans un tableau de bord, ou une commande à la précédente du même client (avec PARTITION BY).",
+    erreur: "Croire que LAG compare à la période précédente du calendrier : s'il manque une ligne (un mois sans aucune commande, par exemple), LAG saute directement à la ligne d'avant celle-là, sans jamais signaler l'absence.",
+    voirAussi: ["OVER", "PARTITION BY", "strftime"],
+    entrainements: []
+  },
+  "julianday": {
+    but: "Convertir une date en un nombre (le nombre de jours écoulés depuis une origine fixe), pour pouvoir soustraire deux dates et obtenir une durée en jours.",
+    contexte: "Indispensable pour tout calcul de délai : julianday(date_livraison) - julianday(date_commande) donne directement le nombre de jours entre les deux.",
+    erreur: "Soustraire deux dates écrites en texte sans passer par julianday : SQLite compare alors du texte sans en faire une opération numérique correcte, ou renvoie une erreur selon l'opération tentée.",
+    voirAussi: ["strftime"],
     entrainements: []
   }
 };
