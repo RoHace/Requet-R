@@ -7,10 +7,18 @@ français.
 
 ## Essayer
 
-Ouvrir `requeter.html` dans un navigateur. C'est tout.
+**En ligne : [requetr.vercel.app](https://requetr.vercel.app/)** — rien à installer.
 
-Un seul fichier, aucune installation, aucun compte, aucune requête réseau : la base de données
-tourne dans la page. Le fichier n'est pas versionné (voir « Développer ») ; pour l'obtenir :
+Ou localement, en ouvrant `requeter.html` dans un navigateur. C'est tout.
+
+**Les deux sont le même programme.** La version en ligne est exactement le fichier que produit
+`node build.mjs`, servi tel quel : même octets, même empreinte. Dans les deux cas la base de
+données tourne dans la page, le chargement du document est la seule requête réseau — plus rien
+ensuite, même en ligne — et la progression reste dans le navigateur de celui qui l'utilise.
+Aucune donnée n'est envoyée nulle part : il n'y a ni compte, ni serveur, ni analytique.
+
+Un seul fichier, aucune installation. Le fichier n'est pas versionné (voir « Développer ») ; pour
+l'obtenir :
 
 ```bash
 node build.mjs
@@ -150,7 +158,10 @@ viennent d'un second jeu plutôt que d'avoir sali le premier.
 - **Il n'y a ni compte ni synchronisation.** La progression est stockée par le navigateur de
   celui qui l'utilise, et nulle part ailleurs. Changer de navigateur ou de machine, ou vider les
   données du site, c'est repartir de zéro — l'écran Réglages permet d'exporter et de réimporter sa
-  progression dans un fichier, et c'est le seul moyen de la déplacer.
+  progression dans un fichier, et c'est le seul moyen de la déplacer. À noter : le navigateur
+  sépare son stockage par origine, donc la version en ligne et un fichier ouvert en local ont
+  **deux progressions distinctes**, même sur la même machine. C'est aussi par là qu'on passe d'une
+  à l'autre : exporter d'un côté, réimporter de l'autre.
 - **Ce n'est pas un outil pour interroger ses propres données.** Les deux jeux sont fixes et
   gelés ; rien ne permet de charger un fichier à soi. Le bac à sable sert à explorer librement ces
   deux bases, pas à en importer une troisième.
